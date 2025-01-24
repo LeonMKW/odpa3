@@ -12,7 +12,7 @@ from utils import db
 
 from task.od_automation_tasks import orbit_precision_analysis_auto_task
 # collision_avoidance_precision_analysis_auto_task
-from utils.dailyreport_utils import get_obh
+# from utils.dailyreport_utils import get_obh
 
 import warnings
 
@@ -141,13 +141,13 @@ def odpa():
         get_ephemeris=get_ephemeris,
         get_F10point7=get_F10point7,
         _influxdb=influxdb_input, client=client_input,
-        note_url=note_url,
         orbit_prop_url=orbit_prop_url,
-        OSS2=OSS2,
         satID_list=data['satIDs']
     )
     return jsonify(response), 200
 
+# OSS2 = OSS2,
+# note_url = note_url,
 
 # # excute collision avoidance PA//自动计算系列
 # @app.route('/capa', methods=['POST'])

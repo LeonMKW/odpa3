@@ -99,7 +99,6 @@ def gnss_get_last_12(post_token_url,
 
     # Extract the last GNSS time
     gnsstime_last = int(points_df[tm_timestamp].iloc[0])
-    print("gnsstime_last_12:", gnsstime_last)
     return gnsstime_last
 
 

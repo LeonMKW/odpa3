@@ -146,12 +146,8 @@ class Mongo(object):
         return self.client
 
     # READ
-    def read_data(self, mission_id, collection):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one({'mission_id': mission_id})
-        return result
-
-    def read_AS_data(self, query, collection):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one(query)
+    def find_one_data(self, query, collection):
+        result = self.client['orbit_analysis'][str(collection)].find_one(query)
         return result
 
     def read_OBCrecord_data(self, eventid, collection):
@@ -277,13 +273,13 @@ class Mongo(object):
         return output
 
     # WRITE
-    def write_AS_data(self, data, collection):
-        result = self.client['flight-control-middle-data'][str(collection)].insert_one(data)
+    def write_one_data(self, data, collection):
+        result = self.client['orbit_analysis'][str(collection)].insert_one(data)
         return result
 
     # UPDATE
-    def update_AS_data(self, data, collection, composite_key):
-        result = self.client['flight-control-middle-data'][str(collection)].update_one(composite_key, {"$set": data}, upsert=True)
+    def update_one_data(self, data, collection, composite_key):
+        result = self.client['orbit_analysis'][str(collection)].update_one(composite_key, {"$set": data}, upsert=True)
         return result
 
     def replace_AS_data(self, filter_dict, data, collection):

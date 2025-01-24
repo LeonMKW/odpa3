@@ -43,7 +43,7 @@ def orbit_precision_calculation_step1(post_token_url,
     # Check if sixelements is not empty
     if ephemeris:
         spacecraft_id = ephemeris.get("spacecraftId", "Unknown")
-        logging.info(f"Ephemeris successfully obtained for spacecraftId: {spacecraft_id}")
+        logging.info(f"Ephemeris successfully obtained for spacecraftId: {spacecraft_id},gnsstime_last_12: {gnsstime_last_od}")
         return ephemeris
     else:
         logging.info("No available ephemeris")
@@ -60,7 +60,7 @@ def orbit_precision_calculation_step2_1(post_token_url,
                                         get_F10point7,
                                         orbit_prop_url):
     # Generate the orbit propagation body
-    orbitbody = orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=0.051)
+    orbitbody = orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=12)
 
     # Logging start of propagation
     logging.info(
@@ -160,7 +160,11 @@ def orbit_precision_calculation_step2_1(post_token_url,
                  )
 
     # Print the merged data for debugging or logging
-    # print(merged_df.to_string())
+    # Convert merged_df to MongoDB JSON format
+    merged_json = {
+        "ephemeris_id": ephemeris_id_value,  # Store ephemeris_id once at the top level
+        "data": merged_df.to_dict(orient='records')  # Store the rest of the data as a list of records
+    }
 
     # Calculate mean error
     avg2 = merged_df['error'].mean()
@@ -169,7 +173,6 @@ def orbit_precision_calculation_step2_1(post_token_url,
     ephemeris_error = math.sqrt((merged_df.at[0, 'theoretical_x'] - merged_df.at[0, 'x']) ** 2 +
                                 (merged_df.at[0, 'theoretical_y'] - merged_df.at[0, 'y']) ** 2 +
                                 (merged_df.at[0, 'theoretical_z'] - merged_df.at[0, 'z']) ** 2)
-
     # Calculate the maximum error
     avg2_max = merged_df['error'].max()
 
@@ -179,39 +182,40 @@ def orbit_precision_calculation_step2_1(post_token_url,
     ephemeris['error12'] = avg2_max  # 外推12小时最大误差
 
     # Print the ephemeris dictionary with ephemeris error, added mse and error12
-    print(ephemeris)
+    # print(ephemeris)
+    # print(merged_df.to_string())
+    # print(merged_json)
 
-    return merged_df, ephemeris
-
-
-def check_dict_value_types(input_dict):
-    types_dict = {}
-    for key, value in input_dict.items():
-        types_dict[key] = type(value).__name__
-    return types_dict
+    return merged_json, ephemeris
 
 
-# used for od comparision
-def get_Post_Satellite_Report_Info(post_satellite_report_search_url, satelliteId, reportTypes, beginTime, endTime,
-                                   states):
-    # Construct the JSON body
-    payload = {
-        "satelliteId": satelliteId,
-        "reportTypes": reportTypes,
-        "beginTime": beginTime,
-        "endTime": endTime,
-        "states": states
-    }
+# def check_dict_value_types(input_dict):
+#     types_dict = {}
+#     for key, value in input_dict.items():
+#         types_dict[key] = type(value).__name__
+#     return types_dict
 
-    # Make the HTTP POST request
-    response = requests.post(post_satellite_report_search_url, json=payload)
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        # print(response.json())
-        return response.json()
-    else:
-        response.raise_for_status()
+# # used for od comparision
+# def get_Post_Satellite_Report_Info(post_satellite_report_search_url, satelliteId, reportTypes, beginTime, endTime,
+#                                    states):
+#     # Construct the JSON body
+#     payload = {
+#         "satelliteId": satelliteId,
+#         "reportTypes": reportTypes,
+#         "beginTime": beginTime,
+#         "endTime": endTime,
+#         "states": states
+#     }
+#
+#     # Make the HTTP POST request
+#     response = requests.post(post_satellite_report_search_url, json=payload)
+#
+#     # Check if the request was successful
+#     if response.status_code == 200:
+#         # print(response.json())
+#         return response.json()
+#     else:
+#         response.raise_for_status()
 
 
 # def extract_file_ids(report_info):
