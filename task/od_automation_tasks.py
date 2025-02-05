@@ -46,6 +46,15 @@ def orbit_precision_analysis_auto_task(post_token_url,
         tf1_timestamp = int(datetime.strptime(epoch_time_utc, '%Y-%m-%dT%H:%M:%S.%fZ').timestamp())  # Convert to timestamp
         tf2_timestamp = tf1_timestamp + 12 * 3600  # Add 12 hours
 
+        # Step 2: Perform orbit precision calculation and get the merged JSON
+        merged_json, ephemeris_with_err = orbit_precision_calculation_step2_1(post_token_url,
+                                                                              post_token_user_name,
+                                                                              post_token_password, _influxdb, client,
+                                                                              satellite_property,
+                                                                              ephemeris,
+                                                                              get_F10point7=get_F10point7,
+                                                                              orbit_prop_url=orbit_prop_url)
+
         # Check in MongoDB for the ephemeris_id in the last 12 hours (ephemeris_pa collection)
         ephemeris_query = {
             'id': ephemeris_id,
@@ -55,20 +64,12 @@ def orbit_precision_analysis_auto_task(post_token_url,
 
         if existing_ephemeris:
             logging.info(f"Ephemeris ID {ephemeris_id} already exists in 'ephemeris_pa'. Updating the record.")
-            mongo.update_one_data(data=ephemeris, collection='ephemeris_pa', composite_key=ephemeris_query)
+            ephemeris_with_err['timestamp'] = tf1_timestamp  # Add timestamp to ensure consistency
+            mongo.update_one_data(data=ephemeris_with_err, collection='ephemeris_pa', composite_key=ephemeris_query)
         else:
             logging.info(f"Ephemeris ID {ephemeris_id} does not exist in 'ephemeris_pa'. Creating a new record.")
-            ephemeris['timestamp'] = tf1_timestamp  # Add timestamp to the record
-            mongo.write_one_data(data=ephemeris, collection='ephemeris_pa')
-
-        # Step 2: Perform orbit precision calculation and get the merged JSON
-        merged_json, ephemeris = orbit_precision_calculation_step2_1(post_token_url,
-                                                                     post_token_user_name,
-                                                                     post_token_password, _influxdb, client,
-                                                                     satellite_property,
-                                                                     ephemeris,
-                                                                     get_F10point7=get_F10point7,
-                                                                     orbit_prop_url=orbit_prop_url)
+            ephemeris_with_err['timestamp'] = tf1_timestamp  # Add timestamp to the record
+            mongo.write_one_data(data=ephemeris_with_err, collection='ephemeris_pa')
 
         # Prepare merged_json for MongoDB
         propagation_record = {
@@ -88,23 +89,27 @@ def orbit_precision_analysis_auto_task(post_token_url,
         existing_propagation = mongo.find_one_data(propagation_query, 'propagation_pa')
 
         if existing_propagation:
-            logging.info(f"Propagation data for Ephemeris ID {ephemeris_id} already exists in 'propagation_pa'. Updating the record.")
+            logging.info(
+                f"Propagation data for Ephemeris ID {ephemeris_id} already exists in 'propagation_pa'. Updating the "
+                f"record.")
             mongo.update_one_data(data=propagation_record, collection='propagation_pa', composite_key=propagation_query)
         else:
-            logging.info(f"Propagation data for Ephemeris ID {ephemeris_id} does not exist in 'propagation_pa'. Creating a new record.")
+            logging.info(
+                f"Propagation data for Ephemeris ID {ephemeris_id} does not exist in 'propagation_pa'. Creating a new "
+                f"record.")
             mongo.write_one_data(data=propagation_record, collection='propagation_pa')
 
         # Add Beijing time to ephemeris
         utc = pytz.timezone('UTC')
         beijing = pytz.timezone('Asia/Shanghai')
-        timestamp_utc = datetime.strptime(ephemeris['epochTimeUTC'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        timestamp_utc = datetime.strptime(ephemeris_with_err['epochTimeUTC'], '%Y-%m-%dT%H:%M:%S.%fZ')
         utc_dt = utc.localize(timestamp_utc)  # Localize UTC time
         beijing_dt = utc_dt.astimezone(beijing)  # Convert to Beijing time
-        ephemeris['beijing_time'] = beijing_dt.strftime('%Y-%m-%d %H:%M:%S')
+        ephemeris_with_err['beijing_time'] = beijing_dt.strftime('%Y-%m-%d %H:%M:%S')
 
         # Log results
         logging.info(f"{satIDs} odpa pipeline complete")
-        # logging.info(f"Updated ephemeris: {ephemeris}")
+        # logging.info(f"Updated ephemeris with errors: {ephemeris_with_err}")
 
     return "odpa_task_end"
 

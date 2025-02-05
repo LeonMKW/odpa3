@@ -251,7 +251,7 @@ def orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=1):
         "thrusterForce": 0,
         "firePeriods": [],
         "calcStepInSeconds": 1,
-        "radiationFlow": radiation_flow,  # Use the computed radiationFlow value
+        "radiationFlow": 73,  # Use the computed radiationFlow value
         "beginTime": beijing_time,  # 13-digit Unix timestamp in milliseconds
         "endTime": end_time,  # 13-digit Unix timestamp in milliseconds
         "satelliteMass": satellite_property["mass"],  # Satellite mass from satellite_od_dict
