@@ -60,7 +60,7 @@ def orbit_precision_calculation_step2_1(post_token_url,
                                         get_F10point7,
                                         orbit_prop_url):
     # Generate the orbit propagation body
-    orbitbody = orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=12)
+    orbitbody, f107 = orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=12)
 
     # Logging start of propagation
     logging.info(
@@ -180,6 +180,7 @@ def orbit_precision_calculation_step2_1(post_token_url,
     ephemeris['ephemeris_error'] = ephemeris_error
     ephemeris['mse'] = avg2  # MSE/外推精度
     ephemeris['error12'] = avg2_max  # 外推12小时最大误差
+    ephemeris['F107'] = f107
 
     # Print the ephemeris dictionary with ephemeris error, added mse and error12
     # print(ephemeris)

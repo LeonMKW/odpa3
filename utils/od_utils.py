@@ -177,19 +177,16 @@ def ephemeris_acquire(post_token_url,
 
 
 def orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=1):
-    # print(satellite_property)
-    # print(ephemeris)
     # Convert the UTC time to a Unix timestamp (milliseconds)
     begin_time = int(datetime.strptime(ephemeris["epochTimeUTC"], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() * 1000)
     # Convert to Beijing time (UTC + 8 hours)
-    beijing_time = begin_time + 28800 * 1000  # 8 hours * 60 minutes * 60 seconds * 1000 milliseconds
-    # Calculate endTime by adding hours (converted to milliseconds) to beginTime
-    end_time = beijing_time + hours * 3600 * 1000  # Convert hours to milliseconds
+    beijing_time = begin_time + 28800 * 1000
+    # Calculate endTime by adding hours (converted to milliseconds)
+    end_time = beijing_time + hours * 3600 * 1000
 
     # Get the Beijing date for the start time
-    beijing_date = datetime.utcfromtimestamp(beijing_time / 1000) + timedelta(
-        hours=8)  # Convert back to UTC and add 8 hours for Beijing time
-    date_str = beijing_date.strftime("%m-%d")  # Format the date as 'MM-DD'
+    beijing_date = datetime.utcfromtimestamp(beijing_time / 1000) + timedelta(hours=8)
+    date_str = beijing_date.strftime("%m-%d")
 
     # Construct the URL for the GET request to the F10.7 API
     url = f"{get_F10point7}?starttime={beijing_date.strftime('%Y%m%d')}&sid=0.6115449414235199"
@@ -200,21 +197,19 @@ def orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=1):
         raise Exception(f"Failed to fetch data from F10.7 API: {response.text}")
 
     # Extract the JSON portion from the HTML response using the first '###' as a separator
-    response_text = response.text.split('###')[0]  # Only keep the part before the '###'
+    response_text = response.text.split('###')[0]
 
     try:
-        # Parse the remaining JSON portion
+        # Parse the JSON portion
         data = json.loads(response_text)
     except json.JSONDecodeError:
         raise Exception("Failed to decode JSON from the response.")
 
     # Remove scalar fields like 'min', 'max', 'numDivLines'
-    scalar_keys = ['min', 'max', 'numDivLines']
-    for key in scalar_keys:
-        if key in data:
-            del data[key]
+    for key in ['min', 'max', 'numDivLines']:
+        data.pop(key, None)
 
-    # Now parse the JSON-encoded strings into actual lists
+    # Parse the JSON-encoded strings into actual lists
     xaxis = json.loads(data['xaxis'])
     realvalue = json.loads(data['realvalue'])
     futurevalue = json.loads(data['futurevalue'])
@@ -225,48 +220,46 @@ def orbitcal_body(satellite_property, ephemeris, get_F10point7, hours=1):
         'realvalue': realvalue,
         'futurevalue': futurevalue
     })
-    # print(df.to_string())
-    # Convert 'realvalue' and 'futurevalue' to numeric, setting 'null' as NaN
     df['realvalue'] = pd.to_numeric(df['realvalue'], errors='coerce')
     df['futurevalue'] = pd.to_numeric(df['futurevalue'], errors='coerce')
 
-    # Find the row where the xaxis matches the beijing_date
+    # Find the row where the xaxis matches the Beijing date (formatted as MM-DD)
     date_row = df[df['xaxis'] == date_str]
 
-    # Initialize radiation flow with the default value
-    radiation_flow = 73
-
+    # Initialize radiation flow (F10.7 value) with the default value
+    f107 = 73
     if not date_row.empty:
-        # Get the realvalue or futurevalue for the matched date
         real_val = date_row['realvalue'].values[0]
         future_val = date_row['futurevalue'].values[0]
-
-        # Determine radiation flow based on the realvalue and futurevalue
         if pd.notna(real_val):
-            radiation_flow = int(real_val)
+            f107 = int(real_val)
         elif pd.notna(future_val):
-            radiation_flow = int(future_val)
-    # Construct the orbit calculation body
-    return {
+            f107 = int(future_val)
+
+    # Construct the orbit calculation body (keeping the format used later on)
+    orbit_body = {
         "thrusterForce": 0,
         "firePeriods": [],
         "calcStepInSeconds": 1,
-        "radiationFlow": 73,  # Use the computed radiationFlow value
-        "beginTime": beijing_time,  # 13-digit Unix timestamp in milliseconds
-        "endTime": end_time,  # 13-digit Unix timestamp in milliseconds
-        "satelliteMass": satellite_property["mass"],  # Satellite mass from satellite_od_dict
-        "satelliteArea": satellite_property["windwardArea"],  # Satellite surface area
+        "radiationFlow": 73,  # This remains constant for the propagation API
+        "beginTime": beijing_time,
+        "endTime": end_time,
+        "satelliteMass": satellite_property["mass"],
+        "satelliteArea": satellite_property["windwardArea"],
         "orbitElements": {
-            "CD": ephemeris["CD"],  # Drag coefficient
-            "epochTimeUTC": ephemeris["epochTimeUTC"],  # Orbital epoch in UTC
-            "a": ephemeris["a"],  # Semi-major axis
-            "e": ephemeris["e"],  # Eccentricity
-            "i": ephemeris["i"],  # Inclination
-            "dw": ephemeris["dw"],  # Argument of perigee
-            "xw": ephemeris["xw"],  # Longitude of ascending node
-            "M": ephemeris["M"]  # Mean anomaly
+            "CD": ephemeris["CD"],
+            "epochTimeUTC": ephemeris["epochTimeUTC"],
+            "a": ephemeris["a"],
+            "e": ephemeris["e"],
+            "i": ephemeris["i"],
+            "dw": ephemeris["dw"],
+            "xw": ephemeris["xw"],
+            "M": ephemeris["M"]
         }
     }
+
+    # Return a tuple: (orbit propagation body, computed F10.7 value)
+    return orbit_body, f107
 
 
 def get_gnss_data(satellite_property, ephemeris, _influxdb, client):
