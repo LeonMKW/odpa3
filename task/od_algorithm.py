@@ -125,14 +125,13 @@ def orbit_precision_calculation_step2_1(post_token_url,
 
     # Fetch GNSS data
     result = get_gnss_data(satellite_property, ephemeris, _influxdb, client)
-
     # Drop unnecessary fields
     result.drop(['time', '_satelliteCode'], axis=1, inplace=True)
 
     pd.set_option('display.float_format', lambda x: '%.11f' % x)
 
     # Adjust the result data if needed (e.g., handling satIDs)
-    if satellite_property['satelliteCode'] == '1':  # Ensure this check is valid for your logic
+    if satellite_property['satelliteCode'] == 'GS-1a':  # Ensure this check is valid for your logic
         result['timestamp'] = result['timestamp'] - 27
 
     # Fetch ephemeris ID value from the dictionary
