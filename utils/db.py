@@ -52,48 +52,6 @@ class Influxdb(object):
 
         return points
 
-    def get_distinct_phase(self, _client, filters=None, limit=1000000):
-        query_str = 'select \"phase\", _satelliteCode from \"phase\" ' + filters \
-                    + 'ORDER BY time DESC' + ' limit ' + str(limit)
-        result = _client.query(query_str)
-        if len(result) == 0:
-            return {}
-        # print(query_str)
-        points = list(result.get_points())
-        return points
-
-    def get_distinct_phase_diff(self, _client, filters=None, limit=1):
-        query_str = 'select \"phase_diff\", _satelliteCode from \"phase_diff\" ' + filters \
-                    + 'ORDER BY time DESC' + ' limit ' + str(limit)
-        result = _client.query(query_str)
-        if len(result) == 0:
-            return {}
-        # print(query_str)
-        points = list(result.get_points())
-        return points
-
-    def get_all_monitors(self, _client, measurement, fields, filters=None, limit=100000):
-        query_str = 'select satelliteCode,' + ','.join([x for x in fields]) \
-                    + ' from \"' + measurement + '\" ' + filters \
-                    + ' limit ' + str(limit)
-        result = _client.query(query_str)
-        if len(result) == 0:
-            return {}
-        points = list(result.get_points())
-        return points
-
-    def get_command(self, _client, fields, filters=None, limit=1000000):
-        query_str = 'select satellite_code,' + ','.join([x for x in fields]) \
-                    + ' FROM tcSendRecord ' + filters \
-                    + ' limit ' + str(limit)
-        # print(query_str)
-        result = _client.query(query_str)
-        if len(result) == 0:
-            return {}
-        points = list(result.get_points())
-        return points
-
-
 def check_str_is_cn(str_all):
     """检查字符串中是否有中文字符"""
     for s in str_all:
@@ -150,127 +108,42 @@ class Mongo(object):
         result = self.client['orbit_analysis'][str(collection)].find_one(query)
         return result
 
-    def read_OBCrecord_data(self, eventid, collection):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one({'eventid': eventid})
-        return result
-
-    def get_lastone_data(self, collection, query):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one(query, sort=[('time_found',
-                                                                                                   pymongo.DESCENDING)])
-        return result
-
-    def get_all_data(self, collection, query):
-        result = self.client['flight-control-middle-data'][str(collection)].find(query)
-        return result
-
-    def get_nearest_data(self, collection, query):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one(query, sort=[('time_found',
-                                                                                                   pymongo.DESCENDING)])
-        return result
-
-    def get_cum_reset_data(self, collection):
-        result = self.client['flight-control-middle-data'][str(collection)].find_one(sort=[('time_found',
-                                                                                            pymongo.DESCENDING)])
-        return result
-
-    def read_alert_data(self, tf1, tf2, satelliteCode):
-        pipeline = [{'$sort': {'createTime': -1}}, {
-            '$lookup': {'from': 'notice_config', 'localField': 'noticeCode', 'foreignField': 'noticeCode',
-                        'as': 'noticeConfig'}}, {
-             '$match': {'createTime': {'$gte': int(tf1), '$lte': int(tf2)}, 'systemId': '61',
-                        'params.eventObjectName': str(satelliteCode), 'noticeConfig.channelType': 'dingtalk_robot',
-                        'params.eventCode': {'$regex': 'TCTM'}}}, {'$project': {'params': 1}}]
-        # print(pipeline)
-        # Execute the aggregation pipeline
-        result = self.client["ttnonc-notice"]["notice_record"].aggregate(pipeline)
-
-        return result
-
-    def read_alert_data_end_status(self, eventLogId):
-        pipeline = [
-            {
-                "$sort": {
-                    "createTime": -1
-                }
-            },
-            {
-                "$match": {
-                    "startEventLogId": eventLogId,
-                }
-            },
-            {
-                "$project": {
-                    "startEventLogId": 1,
-                    "isEnd": 1
-                }
-            }
-        ]
-
-        # Execute the aggregation pipeline
-        result = self.client["ttnonc-event"]["event_status"].aggregate(pipeline)
-
-        return list(result)
-
-    def read_tracking_quality_data(self, collection_name, mission_ids):
-        collection = self.client['flight-control-middle-data'][str(collection_name)]
-
-        # Ensure mission_ids is a list of strings or integers
-        if not isinstance(mission_ids, list):
-            logging.error("mission_ids must be a list of strings or integers.")
-            raise ValueError("mission_ids must be a list of strings or integers.")
-
-        query = {"mission_id": {"$in": mission_ids}}
-        documents = collection.find(query)
-
-        # Convert to list and return
-        doc = list(documents)
-        # logging.info(f"Found {len(doc)} documents for mission_ids: {mission_ids}")
-        return doc
-
-    def get_doc_by_satid_tf(self, collection, satcode, ts1, ts2):
+    def get_doc_by_satid_tf(self, collection, satid, ts1, ts2):
         query = {
-            "_satelliteCode": satcode,
-            "time_end": {
+            "spacecraftId": satid,
+            "timestamp": {
                 "$gte": ts1,
                 "$lte": ts2
             }
         }
-        response = self.client['flight-control-middle-data'][collection].find(query)
+        response = self.client['orbit_analysis'][collection].find(query)
         return response
 
-    def get_largest_end_time_doc(self, collection, satcode):
+    def get_largest_end_time_doc(self, collection, satid):
         query = {
-            "_satelliteCode": satcode
+            "spacecraftId": satid
         }
-        response = self.client['flight-control-middle-data'][collection].find(query).sort("time_end", -1).limit(1)
+        response = self.client['orbit_analysis'][collection].find(query).sort("timestamp", -1).limit(1)
         return response
 
-    def has_obc_switch_after_time(self, collection, satcode, time):
+    def get_doc_closest_but_not_greater(self, collection, satid, target_ts):
         query = {
-            "_satelliteCode": satcode,
-            "time_found": {"$gt": time}
-        }
-        document = self.client['flight-control-middle-data'][collection].find_one(query)
-        return document is not None
-
-    def get_doc_closest_but_not_greater(self, collection, satcode, target_ts):
-        query = {
-            "_satelliteCode": satcode,
-            "time_end": {
+            "spacecraftId": satid,
+            "timestamp": {
                 "$lt": target_ts
             }
         }
-        response = self.client['flight-control-middle-data'][collection].find(query).sort("time_end", -1).limit(1)
+        response = self.client['orbit_analysis'][collection].find(query).sort("timestamp", -1).limit(1)
         return response
 
-    # CREATE
-    def write_flight_operation_data(self, content, collection):
-        # logging.info(print('writing flight_operation to Mongo...'))
+    def get_doc_closest_but_not_less(self, collection, satid, target_ts):
+        query = {
+            "spacecraftId": str(satid),
+            "timestamp": {"$gte": target_ts}
+        }
 
-        response = self.client['flight-control-middle-data'][str(collection)].insert_one(content)
-        output = {'type': 'Insert',
-                  'Document_ID': str(ObjectId(response.inserted_id))}
-        return output
+        response = self.client['orbit_analysis'][collection].find(query).sort("timestamp", 1).limit(1)
+        return response if response else None
 
     # WRITE
     def write_one_data(self, data, collection):
@@ -281,77 +154,6 @@ class Mongo(object):
     def update_one_data(self, data, collection, composite_key):
         result = self.client['orbit_analysis'][str(collection)].update_one(composite_key, {"$set": data}, upsert=True)
         return result
-
-    def replace_AS_data(self, filter_dict, data, collection):
-        collection = self.client['flight-control-middle-data'][str(collection)]
-        result = collection.replace_one(filter_dict, data, upsert=True)
-        return result
-
-    # UPDATE
-    def update_flight_operation_data(self, content, collection, mission_id):
-        # logging.info('updating flight_operation to Mongo...')
-        filter_query = {'mission_id': mission_id}
-        response = self.client['flight-control-middle-data'][str(collection)].update_one(filter_query,
-                                                                                         {'$set': content})
-        output = {'type': 'Update',
-                  'Document_ID': str(ObjectId(response.upserted_id))}
-
-        return output
-
-    def update_flight_operation_satellite_data(self, content, collection, eventid):
-        # logging.info('updating flight_operation to Mongo...')
-        filter_query = {'eventid': eventid}
-        response = self.client['flight-control-middle-data'][str(collection)].update_one(filter_query,
-                                                                                         {'$set': content})
-        output = {'type': 'Update',
-                  'Document_ID': str(ObjectId(response.upserted_id))}
-
-        return output
-
-    # def update_cumulative_data(self, collection, query, content):
-    #     # logging.info('updating flight_operation to Mongo...')
-    #     response = self.client['flight-control-middle-data'][str(collection)].update_one(query, content)
-    #     output = {'type': 'Update',
-    #               'Document_ID': str(ObjectId(response.upserted_id))}
-    #
-    #     return output
-
-    def update_cumulative_data(self, collection, query, content):
-        # Use the $set operator to update specific fields
-        update_query = {'$set': content}
-        response = self.client['flight-control-middle-data'][str(collection)].update_one(query, update_query)
-        output = {'type': 'Update', 'Document_ID': str(ObjectId(response.upserted_id))}
-        return output
-
-    # DETELE
-    def delete_nearest_data(self, collection, query):
-        result = self.client['flight-control-middle-data'][str(collection)].delete_one(query)
-        return result
-
-
-# MARIADB CLASS OBJECT
-class Mariadb(object):
-    def __init__(self, _host, _port, _dbname, _username, _password):
-        self.host = _host
-        self.port = _port
-        self.database = _dbname
-        self.user = _username
-        self.password = _password
-
-    def get_connection(self):
-        try:
-            conn = mariadb.connect(host=self.host, port=self.port, database=self.database, user=self.user,
-                                   password=self.password)
-            # cur = conn.cursor()
-        except mariadb.Error as e:
-            print(f"Error connecting to MariaDB Platform: {e}")
-            sys.exit(1)
-
-        return conn
-
-    # def cur(self):
-    #     cur = self.cursor()
-    #     return cur
 
 
 class OSS2:

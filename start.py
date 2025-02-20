@@ -10,7 +10,9 @@ from bson import ObjectId
 from flask_cors import CORS
 from utils import db
 
+from utils.space_weather_forecast import space_weather_forecast
 from task.od_automation_tasks import orbit_precision_analysis_auto_task
+from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 # from utils.dailyreport_utils import get_obh
 
@@ -49,7 +51,7 @@ client_orbdata = influxdb_orbdata.connect(app.config['INFLUXDB_HOST'],
                                           app.config['INFLUXDB_PORT'])
 
 # orbit_service = app.config['ORBIT_SERVICE']
-# mete_data_service = app.config['METE_DATA']
+mete_data_service = app.config['METE_DATA']
 # orbit_propagation = app.config['ORBIT_PROPAGATION']
 # orbit_maneuver = app.config['ORBIT_MANEUVER']
 
@@ -67,13 +69,6 @@ orbit_prop_url = app.config['ORBIT_PROPAGATION']
 
 # 加载轨控活动查询
 orbit_maneuver_url = app.config['ORBIT_MANEUVER']
-
-# 加载mariadb
-# mariadbsetup = db.Mariadb(app.config['MARIADB_HOST'],
-#                           app.config['MARIADB_PORT'],
-#                           app.config['MARIADB_ODDBNAME'],
-#                           app.config['MARIADB_USER'],
-#                           app.config['MARIADB_PASSWORD'])
 
 # 连OSS
 OSS2 = db.OSS2(app.config['OSS2_ENDPOINT'],
@@ -103,6 +98,11 @@ get_ephemeris = app.config["GET_EPHEMERIS"]
 
 # getting some cool shit
 get_F10point7 = app.config['GET_F10POINT7']
+
+# getting more cool stuff
+get_ApIndex = app.config['GET_APINDEX']
+get_KpIndex = app.config['GET_KPINDEX']
+
 
 app = Flask(__name__)
 CORS(app)
@@ -145,6 +145,69 @@ def odpa():
         satID_list=data['satIDs']
     )
     return jsonify(response), 200
+
+
+@app.route('/sei-dingtalk-news', methods=['POST'])
+def seireport():
+    data = request.json
+    if not data or "start" not in data or "end" not in data or "satIDs" not in data:
+        return Response(
+            response=json.dumps({"Error": "Please provide 'start', 'end', and 'satIDs'"}),
+            status=400,
+            mimetype='application/json'
+        )
+
+    response = sei_dingtalk_news(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex,
+        satID_list=data['satIDs'],
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        metedataservice_url=mete_data_service,
+        influxdb_orbdata=influxdb_orbdata,
+        client_orbdata=client_orbdata
+    )
+
+    return jsonify({"markdown": response}), 200
+
+
+# 空间环境信息获取 //空间环境系列
+@app.route('/space-enviroment-info', methods=['POST'])
+def sei():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return Response(
+            response=json.dumps({"Error": "Please provide 'start' and 'end' timestamps"}),
+            status=400,
+            mimetype='application/json'
+        )
+
+    try:
+        response = space_weather_forecast(
+            tf1=data['start'],
+            tf2=data['end'],
+            get_F10point7=get_F10point7,
+            get_ApIndex=get_ApIndex,
+            get_KpIndex=get_KpIndex
+        )
+
+        return Response(
+            response=json.dumps(response, ensure_ascii=False),  # Ensure correct JSON response
+            status=200,
+            mimetype='application/json'
+        )
+
+    except Exception as e:
+        return Response(
+            response=json.dumps({"Error": f"Failed to fetch space weather data: {str(e)}"}),
+            status=500,
+            mimetype='application/json'
+        )
+
 
 # OSS2 = OSS2,
 # note_url = note_url,

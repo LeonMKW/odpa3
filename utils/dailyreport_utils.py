@@ -1,82 +1,133 @@
-import logging
-import pprint
 import json
-import pandas as pd
-from requests import post
-import pytz
-from datetime import datetime, timedelta
-from utils.db import get_mongo
-from dateutil import parser
 import requests
-import arrow
+import pandas as pd
 from utils.authentication import get_header_token
+import logging
+from datetime import datetime
+from utils.db import get_mongo
+from utils.space_weather_forecast import space_weather_forecast
 
-# def obp(cur, satellitecode):
-#     # orbit status
-#     query_orbit_precision = f"""
-#     SELECT *
-#     FROM orbit_precision_summary
-#     WHERE spacecraft = '{satellitecode}'
-#     ORDER BY timestamp DESC
-#     LIMIT 1;
-#     """
-#
-#     cur.execute(query_orbit_precision)
-#     op = cur.fetchone()
-#     obp_df = pd.DataFrame([op])
-#     # Drop unnecessary columns
-#     obp_df = obp_df[['mse']]
-#     return obp_df
 
-# def get_obh(post_token_url,
-#             post_token_user_name,
-#             post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satI = satID.split(",")  # Split the comma-separated satellite IDs into a list
-#     all_altitudes = []
-#
-#     for sat in satI:
-#         altitude_df = get_all_altitude(post_token_url,
-#                                        post_token_user_name,
-#                                        post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, sat,
-#                                        start, end)
-#         altitude_df['alt'] = round(altitude_df['alt'] / 1000, 3)
-#         altitude_df['_satelliteCode'] = altitude_df['_satelliteCode']
-#         all_altitudes.append(altitude_df[['alt', '_satelliteCode']])
-#
-#     # Combine all altitude dataframes into one
-#     combined_df = pd.concat(all_altitudes, ignore_index=True)
-#     result = combined_df.to_dict(orient='records')  # Convert DataFrame to a list of dictionaries
-#
-#     return json.dumps(result)
-#
-#
-# def obh(post_token_url,
-#         post_token_user_name,
-#         post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end):
-#     # Assumes start and end are defined here or passed to this function
-#     altitude = get_altitude(post_token_url,
-#                             post_token_user_name,
-#                             post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end)
-#     # print(altitude)
-#     altitude['alt'] = round(altitude['alt'] / 1000, 3)
-#     altitude = altitude[['alt']]
-#
-#     return altitude
-#
-#
-# def o2pphase(post_token_url,
-#              post_token_user_name,
-#              post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID):
-#     phase = get_phase(post_token_url,
-#                       post_token_user_name,
-#                       post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID)
-#     phase['phase'] = round(phase['phase'], 3)
-#     phase = phase[['phase']]
-#     return phase
-#
-#
-# def o2pphase_new(influxdb_orbdata, client_orbdata):
-#     phase = get_phase_new(influxdb_orbdata, client_orbdata)
-#     phase['phase_diff'] = round(phase['phase_diff'], 3)
-#     return phase
+def satellite_properties_general(post_token_url, post_token_user_name, post_token_password, metedataservice_url, satIDs):
 
+    # Construct the API URL
+    metedataserviceurl = metedataservice_url + '/v2/api/spacecrafts/detail'
+
+    # Get authentication token
+    token = get_header_token(post_token_url, post_token_user_name, post_token_password)
+
+    # Define headers with the authentication token
+    headers = {
+        'x-web-token': token,
+        'Content-Type': 'application/json'
+    }
+
+    # Convert "2,3" into ["2", "3"]
+    satID_list = satIDs.split(",") if isinstance(satIDs, str) else satIDs
+    payload = {"ids": [str(satID) for satID in satID_list]}  # Convert each ID to string inside a list
+
+    try:
+        # Make the POST request
+        res = requests.post(url=metedataserviceurl, json=payload, headers=headers, timeout=300)
+        res.raise_for_status()  # Raise exception for non-200 responses
+
+        # Parse the JSON response
+        response_data = res.json()
+        sat_data_list = response_data.get("data", {}).get("list", [])
+
+        if not sat_data_list:
+            print("No data found for given satellite IDs.")
+            return {}
+
+        # Dictionary to store results
+        satellite_info = {}
+
+        # Extract 'code' and 'tcTmVersion' for each satellite
+        for sat in sat_data_list:
+            sat_id = str(sat.get("id", "N/A"))  # Convert ID to string for dictionary keys
+            satellite_info[sat_id] = {
+                "code": sat.get("code", "N/A"),
+                "tcTmVersion": sat.get("tcTmVersion", "N/A")
+            }
+
+        # print(f"Satellite Properties: {satellite_info}")  # Debugging output
+        return satellite_info
+
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP request failed: {e}")
+        return {}
+
+
+def get_altitude(post_token_url, post_token_user_name, post_token_password,
+                 metedataservice_url, influxdb_orbdata, client_orbdata, satIDs, start, end):
+
+
+    # Fetch all satellite properties in one request
+    satellite_properties_data = satellite_properties_general(post_token_url, post_token_user_name,
+                                                             post_token_password, metedataservice_url, satIDs)
+
+    altitude_data = []
+
+    for satID in satIDs.split(","):  # Ensure we iterate over satellite IDs
+        sat_properties = satellite_properties_data.get(satID)
+
+        if not sat_properties:
+            print(f"Warning: No satellite properties found for {satID}")
+            continue
+
+        satellite_code = sat_properties["code"]  # Get `code` for querying altitude
+
+        # Convert timestamps to UTC format
+        tf1 = pd.to_datetime(start, unit="ms").strftime('%Y-%m-%dT%H:%M:%SZ')
+        tf2 = pd.to_datetime(end, unit="ms").strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Query altitude from InfluxDB
+        points = influxdb_orbdata.get_distinct_alt(client_orbdata, tf1, tf2, satellite_code)
+        points_df = pd.DataFrame(points)
+
+        if not points_df.empty:
+            latest_altitude = points_df.iloc[-1].to_dict()  # Get latest altitude data
+            altitude_data.append({"satellite_id": satID, "altitude": latest_altitude})
+
+    return altitude_data
+
+
+def sei_dingtalk_news(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_list,
+                      post_token_url, post_token_user_name, post_token_password,
+                      metedataservice_url, influxdb_orbdata, client_orbdata):
+
+
+    # Ensure tf1 and tf2 are integers
+    tf1 = int(tf1)
+    tf2 = int(tf2)
+
+    mongo = get_mongo()
+    satIDs = satID_list.split(",")
+
+    # 1️⃣ Fetch Space Environment Data
+    space_env_data = space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
+    if space_env_data == "sepc down":
+        return {"Error": "Failed to fetch space environment data"}
+
+    # 2️⃣ Fetch Satellite Data from MongoDB (Closest Record Not Less Than tf1)
+    satellite_data = []
+    for satID in satIDs:
+        closest_cursor = mongo.get_doc_closest_but_not_less("ephemeris_pa", satID, tf1 // 1000)
+
+        # Ensure all documents are added (not just one satellite)
+        closest_records = list(closest_cursor)  # Convert cursor to list
+
+        if closest_records:  # Append all found records
+            satellite_data.extend(closest_records)
+
+    # 3️⃣ Fetch Satellite Altitude from InfluxDB
+    altitude_data = get_altitude(
+        post_token_url, post_token_user_name, post_token_password,
+        metedataservice_url, influxdb_orbdata, client_orbdata, ",".join(satIDs), tf1, tf2
+    )
+    print(altitude_data)  # Debugging output
+
+    # 4️⃣ Format the Data for DingTalk
+    # report_content = format_sei_report(space_env_data, satellite_data, altitude_data)
+
+    return 'report_content'
