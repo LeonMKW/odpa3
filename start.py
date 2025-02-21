@@ -18,7 +18,6 @@ from utils.dailyreport_utils import sei_dingtalk_news
 
 import warnings
 
-
 warnings.filterwarnings('ignore')
 
 
@@ -103,6 +102,10 @@ get_F10point7 = app.config['GET_F10POINT7']
 get_ApIndex = app.config['GET_APINDEX']
 get_KpIndex = app.config['GET_KPINDEX']
 
+# mean_6elements
+mean_6element_url = app.config['MEAN_6ELEMENT']
+# calc_results
+get_calc_result_url = app.config['GET_CALC_RESULT']
 
 app = Flask(__name__)
 CORS(app)
@@ -164,12 +167,8 @@ def seireport():
         get_ApIndex=get_ApIndex,
         get_KpIndex=get_KpIndex,
         satID_list=data['satIDs'],
-        post_token_url=post_token_url,
-        post_token_user_name=post_token_user_name,
-        post_token_password=post_token_password,
-        metedataservice_url=mete_data_service,
-        influxdb_orbdata=influxdb_orbdata,
-        client_orbdata=client_orbdata
+        mean_6element_url=mean_6element_url,
+        get_calc_result_url=get_calc_result_url
     )
 
     return jsonify({"markdown": response}), 200

@@ -9,6 +9,7 @@ import dfply as d
 from utils.flightcontrol_utils import tm_table
 import pytz
 from utils.authentication import get_header_token
+import time
 
 
 def satellite_properties(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
@@ -302,100 +303,85 @@ def get_gnss_data(satellite_property, ephemeris, _influxdb, client):
     return points_df
 
 
-# def get_all_altitude(post_token_url,
-#                      post_token_user_name,
-#                      post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#     tf1 = pd.to_datetime(start).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-#     tf2 = pd.to_datetime(end).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-#
-#     # Use the modified function to get data or nearest data
-#     points = influxdb_orbdata.get_distinct_alt(client_orbdata, tf1, tf2, satellitecode)
-#
-#     points_df = pd.DataFrame(points)
-#     if len(points_df) == 0:
-#         return pd.DataFrame()  # or handle it as needed
-#
-#     return points_df
-#
-#
-# def get_altitude(post_token_url,
-#                  post_token_user_name,
-#                  post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#
-#     # Ensure the input timestamps are in the correct format
-#     tf1 = pd.to_datetime(start).strftime('%Y-%m-%dT%H:%M:%SZ')
-#     tf2 = pd.to_datetime(end).strftime('%Y-%m-%dT%H:%M:%SZ')
-#
-#     # Query data for the current interval
-#     points = influxdb_orbdata.get_distinct_alt(client_orbdata, tf1, tf2, satellitecode)
-#     points_df = pd.DataFrame(points)
-#
-#     # Print the DataFrame to check it
-#     # print(points_df.to_string())
-#
-#     return points_df
-#
-#
-# def get_phase(post_token_url,
-#               post_token_user_name,
-#               post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#
-#     filters = 'WHERE _satelliteCode = \'' + satellitecode + '\' '
-#
-#     # Query data for the current interval
-#     points = influxdb_orbdata.get_distinct_phase(client_orbdata, filters=filters, limit=1)
-#     points_df = pd.DataFrame(points)
-#     # 检查points_df是否为空
-#     if points_df.empty:
-#         points_df = pd.DataFrame({
-#             'time': ['0'],
-#             'phase': [0],
-#             '_satelliteCode': [satellitecode]
-#         })
-#         return points_df
-#     else:
-#         return points_df
-#
-#
-# def get_phase_new(influxdb_orbdata, client_orbdata):
-#     filter1 = 'WHERE _satelliteCode = \'GS-2 & GS-2AP01\' '
-#     filter2 = 'WHERE _satelliteCode = \'GS-2AP01 & GS-2AP02\' '
-#     filter3 = 'WHERE _satelliteCode = \'GS-2AP02 & GS-2BP01\' '
-#     filter4 = 'WHERE _satelliteCode = \'GS-2BP01 & GS-2AP03\' '
-#
-#     # Query data for the current interval
-#     points1 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter1, limit=1)
-#     points2 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter2, limit=1)
-#     points3 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter3, limit=1)
-#     points4 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter4, limit=1)
-#
-#     # Convert each result to DataFrame
-#     points_df1 = pd.DataFrame(points1)
-#     points_df2 = pd.DataFrame(points2)
-#     points_df3 = pd.DataFrame(points3)
-#     points_df4 = pd.DataFrame(points4)
-#
-#     # Concatenate all DataFrames into one
-#     points_df = pd.concat([points_df1, points_df2, points_df3, points_df4], ignore_index=True)
-#
-#     # 检查points_df是否为空
-#     if points_df.empty:
-#         points_df = pd.DataFrame({
-#             'time': ['0'],
-#             'phase_diff': [0],
-#             '_satelliteCode': ['0']
-#         })
-#
-#     return points_df
+def compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url):
+    """
+    Compute the mean altitude for a list of ephemeris data by querying an external API.
+
+    :param ephemeris_list: List of ephemeris data dictionaries
+    :return: List of {spacecraftId, altitude} dictionaries
+    :param mean_6element_url: calc mean element from osculating element
+    :param get_calc_result_url: get result from calculation
+
+
+    """
+
+    # API endpoints
+    submit_url = mean_6element_url
+    result_url = get_calc_result_url
+
+    altitude_data = []
+
+    for ephemeris in ephemeris_list:
+        payload = {
+            "orbitElements": {
+                "epochTimeUTC": ephemeris["epochTimeUTC"],
+                "a": ephemeris["a"],
+                "e": ephemeris["e"],
+                "i": ephemeris["i"],
+                "dw": ephemeris["dw"],
+                "xw": ephemeris["xw"],
+                "M": ephemeris["M"],
+                "CD": ephemeris["CD"]
+            },
+            "version": "v2"
+        }
+
+        try:
+            # Step 1: Submit the orbit elements
+            response = requests.post(submit_url, json=payload, timeout=10)
+            response.raise_for_status()  # Raise error for non-200 responses
+
+            response_data = response.json()
+            if response_data.get("code") != 0 or "data" not in response_data:
+                print(f"Error submitting orbit data for spacecraft {ephemeris['spacecraftId']}: {response_data}")
+                continue
+
+            request_id = response_data["data"]["id"]  # Get the ID from response
+
+            # Step 2: Wait 3 seconds before checking result
+            time.sleep(2)
+
+            # Step 3: Query result with retry mechanism (Max 3 attempts)
+            for attempt in range(3):
+                result_payload = {"id": request_id}
+                result_response = requests.post(result_url, json=result_payload, timeout=10)
+                result_response.raise_for_status()
+
+                result_data = result_response.json()
+
+                # If successful, extract altitude
+                if result_data.get("code") == 0 and "data" in result_data:
+                    result_content = result_data["data"].get("resultContent", {}).get("results", [])
+                    if result_content:
+                        altitude = result_content[0].get("altitude", "N/A")
+                        altitude_data.append({"spacecraftId": ephemeris["spacecraftId"], "altitude": altitude})
+                        break  # Exit loop once we get a valid response
+
+                # If response says "calculation not completed", retry after 3 seconds
+                elif result_data.get("code") == 51006:
+                    print(f"Retrying {ephemeris['spacecraftId']} (Attempt {attempt + 1}/3): Calculation not complete.")
+                    time.sleep(3)
+                else:
+                    print(f"Error fetching result for spacecraft {ephemeris['spacecraftId']}: {result_data}")
+                    break  # Stop retrying if another error occurs
+
+            else:
+                # If we exhaust all retries, log failure
+                print(f"Failed to get altitude for spacecraft {ephemeris['spacecraftId']} after 3 attempts.")
+
+        except requests.exceptions.RequestException as e:
+            print(f"HTTP request failed for spacecraft {ephemeris['spacecraftId']}: {e}")
+
+    print(altitude_data)
+    return altitude_data
+
