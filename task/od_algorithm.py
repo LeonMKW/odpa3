@@ -72,8 +72,14 @@ def orbit_precision_calculation_step2_1(post_token_url,
     token = get_header_token(post_token_url, post_token_user_name, post_token_password)
 
     # Define headers
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
+
     headers = {
-        'x-web-token': token,
+        'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
         'Content-Type': 'application/json'
     }
     # Make the POST request to the orbit propagation API

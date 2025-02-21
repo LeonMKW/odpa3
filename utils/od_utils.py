@@ -6,19 +6,26 @@ import pandas as pd
 import requests
 import re
 import dfply as d
+
+from utils.db import get_mongo
 from utils.flightcontrol_utils import tm_table
 import pytz
 from utils.authentication import get_header_token
 import time
 
 
+#############################################################################################################################
+#############################################################################################################################
+#############################################################################################################################
+#############################################################################################################################
+#############################################################################################################################
 def satellite_properties(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
     # Fetch the token
     token = get_header_token(post_token_url, post_token_user_name, post_token_password)
 
     # Define the headers with the required token
     headers = {
-        'x-web-token': token,
+        'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
         'Content-Type': 'application/json'  # Explicitly specify JSON format
     }
 
@@ -108,10 +115,14 @@ def ephemeris_acquire(post_token_url,
                       post_token_password, startAt, endAt, spacecraftIds, get_ephemeris):
     # Fetch the token
     token = get_header_token(post_token_url, post_token_user_name, post_token_password)
-
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
+    #############################################################################################################################
     # Define the headers with the required token
     headers = {
-        'x-web-token': token,
+        'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
         'Content-Type': 'application/json'
     }
 
@@ -382,6 +393,62 @@ def compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url
         except requests.exceptions.RequestException as e:
             print(f"HTTP request failed for spacecraft {ephemeris['spacecraftId']}: {e}")
 
-    print(altitude_data)
     return altitude_data
 
+
+def calc_alt_diff(ephemeris_list, mean_6element_url, get_calc_result_url, alt_change_time=12):
+    """
+    Calculate the altitude change over a given period for each spacecraft.
+
+    :param ephemeris_list: List of ephemeris data dictionaries
+    :param mean_6element_url: URL to compute mean elements
+    :param get_calc_result_url: URL to get calculation results
+    :param alt_change_time: Time interval (in hours) to compare altitude change (default 12 hours)
+    :return: List of {spacecraftId, altitude_change} dictionaries
+    """
+
+    mongo = get_mongo()
+    previous_ephemeris_list = []
+
+    for ephemeris in ephemeris_list:
+        spacecraft_id = ephemeris["spacecraftId"]
+        current_timestamp = ephemeris["timestamp"]
+        target_timestamp = current_timestamp - (alt_change_time * 3600)  # Convert hours to seconds
+
+        # Query previous ephemeris from MongoDB
+        closest_cursor = mongo.get_doc_closest_but_not_greater("ephemeris_pa", spacecraft_id, target_timestamp)
+        closest_record = list(closest_cursor)
+
+        if closest_record:
+            previous_ephemeris_list.append(closest_record[0])  # Store the previous ephemeris
+
+    if not previous_ephemeris_list:
+        print("No previous ephemeris data found.")
+        return []
+
+    # Compute mean altitudes for current and previous ephemeris
+    current_altitudes = compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url)
+    print("Current Altitudes:", current_altitudes)
+
+    time.sleep(3)  # Ensure processing time before querying results
+
+    # FIXED: Use `previous_ephemeris_list` instead of `ephemeris_list`
+    previous_altitudes = compute_mean_altitude(previous_ephemeris_list, mean_6element_url, get_calc_result_url)
+    print("Previous Altitudes:", previous_altitudes)
+
+    # Create a mapping for easy lookup
+    prev_alt_dict = {entry["spacecraftId"]: entry["altitude"] for entry in previous_altitudes}
+
+    alt_diff_list = []
+
+    for entry in current_altitudes:
+        spacecraft_id = entry["spacecraftId"]
+        current_alt = entry["altitude"]
+        previous_alt = prev_alt_dict.get(spacecraft_id, None)
+
+        if previous_alt is not None:
+            alt_diff = current_alt - previous_alt
+            alt_diff_list.append({"spacecraftId": spacecraft_id, "altitude_change": alt_diff})
+
+    print("Altitude Changes:", alt_diff_list)
+    return alt_diff_list

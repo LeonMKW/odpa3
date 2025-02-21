@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from utils.db import get_mongo
 from utils.space_weather_forecast import space_weather_forecast
-from utils.od_utils import compute_mean_altitude
+from utils.od_utils import compute_mean_altitude,calc_alt_diff
 
 # def satellite_properties_general(post_token_url, post_token_user_name, post_token_password, metedataservice_url, satIDs):
 #
@@ -119,15 +119,16 @@ def sei_dingtalk_news(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_l
         if closest_records:  # Append all found records
             satellite_data.extend(closest_records)
 
-    # print(satellite_data)
+    print(satellite_data)
 
     # 3 Fetch Satellite Data from MongoDB (Closest Record Not Less Than tf1)
     compute_mean_altitude(satellite_data, mean_6element_url, get_calc_result_url)
 
     # 4 altitude change
+    calc_alt_diff(satellite_data, mean_6element_url, get_calc_result_url, alt_change_time=12)
 
 
-    # 4️⃣ Format the Data for DingTalk
+    # Format the Data for DingTalk
     # report_content = format_sei_report(space_env_data, satellite_data, altitude_data)
 
     return 'report_content'
