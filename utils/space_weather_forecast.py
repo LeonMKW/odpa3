@@ -1,7 +1,7 @@
 import json
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import requests
 
@@ -97,39 +97,113 @@ def space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
     :return: JSON containing space weather data or "sepc down" if any request fails
     """
 
-    # Convert tf1 and tf2 from Unix timestamp (milliseconds) to YYYYMMDD and MM-DD format
+    # Convert tf1 and tf2 to YYYYMMDD format
     start_date = datetime.utcfromtimestamp(int(tf1) / 1000).strftime('%Y%m%d')
     end_date = datetime.utcfromtimestamp(int(tf2) / 1000).strftime('%Y%m%d')
 
-    # Construct API URLs dynamically
-    F107url = f"{get_F10point7}?starttime={start_date}&sid=0.6115449414235199"
-    Apurl = f"{get_ApIndex}?starttime={start_date}&endtime={end_date}&sid=0.28182909407741774"
+    # Adjust start_date for prediction (-2 days) and real values (+16 days)
+    adjusted_predict_start_timestamp = (int(tf1) / 1000) - (0 * 86400)  # -2 days for prediction
+    start_date_predict = datetime.utcfromtimestamp(adjusted_predict_start_timestamp).strftime('%Y%m%d')
+
+    adjusted_real_start_timestamp = (int(tf1) / 1000) + (16 * 86400)  # +16 days for real values
+    start_date_real = datetime.utcfromtimestamp(adjusted_real_start_timestamp).strftime('%Y%m%d')
+
+    # Construct API URLs
+    F107url_getpredict = f"{get_F10point7}?starttime={start_date_predict}&sid=0.6115449414235199"
+    F107url_getyesterdayreal = f"{get_F10point7}?starttime={start_date_real}&sid=0.6115449414235199"
+    Apurl_getpredict = f"{get_ApIndex}?starttime={start_date_predict}&sid=0.28182909407741774"
+    Apurl_getyesterdayreal = f"{get_ApIndex}?starttime={start_date_real}&sid=0.28182909407741774"
     Kpurl = f"{get_KpIndex}?starttime={start_date}&endtime={end_date}&sid=0.575286767183163"
 
     try:
-        # Fetch and process data
-        F10point7_value = fetch_f107_index(F107url)
-        if "Error" in F10point7_value:
-            print(f"Error fetching F10.7 Index: {F10point7_value['Error']}")
-            return "sepc down"
+        # Fetch real and predicted F10.7 values
+        F107_real = fetch_f107_index(F107url_getyesterdayreal)
+        F107_predict = fetch_f107_index(F107url_getpredict)
 
-        Ap_value = fetch_ap_index(Apurl)
-        if "Error" in Ap_value:
-            print(f"Error fetching Ap Index: {Ap_value['Error']}")
-            return "sepc down"
+        # Extract and merge F10.7 values
+        F107_xaxis_real = json.loads(F107_real["xaxis"])
+        F107_real_values = json.loads(F107_real["realvalue"])
+        F107_xaxis_pred = json.loads(F107_predict["xaxis"])
+        F107_predicted_values = json.loads(F107_predict["futurevalue"])
 
+        F107_merged = []
+        for i in range(len(F107_xaxis_real)):
+            date = F107_xaxis_real[i]
+            real_value = F107_real_values[i] if F107_real_values[i] != "null" else None
+
+            yesterday_index = i - 1 if i > 0 else None
+            yesterday_real = (
+                F107_real_values[yesterday_index] if yesterday_index is not None and F107_real_values[yesterday_index] != "null"
+                else None
+            )
+
+            try:
+                pred_index = F107_xaxis_pred.index(date)
+                predicted_value = F107_predicted_values[pred_index] if F107_predicted_values[pred_index] != "null" else None
+            except ValueError:
+                predicted_value = None
+
+            merged_value = real_value if real_value is not None else yesterday_real if yesterday_real is not None else predicted_value
+            F107_merged.append(merged_value)
+
+        F10point7_value = {
+            "xaxis": json.dumps(F107_xaxis_real),
+            "value": json.dumps(F107_merged)
+        }
+
+        # Fetch real and predicted ApIndex values
+        Ap_real = fetch_ap_index(Apurl_getyesterdayreal)
+        Ap_predict = fetch_ap_index(Apurl_getpredict)
+
+        # Extract and merge ApIndex values
+        Ap_xaxis_real = json.loads(Ap_real["xaxis"])
+        Ap_real_values = json.loads(Ap_real["realvalue"])
+        Ap_xaxis_pred = json.loads(Ap_predict["xaxis"])
+        Ap_predicted_values = json.loads(Ap_predict["futurevalue"])
+
+        Ap_merged = []
+        for i in range(len(Ap_xaxis_real)):
+            date = Ap_xaxis_real[i]
+            real_value = Ap_real_values[i] if Ap_real_values[i] != "null" else None
+
+            yesterday_index = i - 1 if i > 0 else None
+            yesterday_real = (
+                Ap_real_values[yesterday_index] if yesterday_index is not None and Ap_real_values[yesterday_index] != "null"
+                else None
+            )
+
+            try:
+                pred_index = Ap_xaxis_pred.index(date)
+                predicted_value = Ap_predicted_values[pred_index] if Ap_predicted_values[pred_index] != "null" else None
+            except ValueError:
+                predicted_value = None
+
+            merged_value = real_value if real_value is not None else yesterday_real if yesterday_real is not None else predicted_value
+            Ap_merged.append(merged_value)
+
+        ApIndex_value = {
+            "xaxis": json.dumps(Ap_xaxis_real),
+            "value": json.dumps(Ap_merged)
+        }
+
+        # Fetch and process Kp values
         Kp_value = fetch_kp_index(Kpurl)
-        if "Error" in Kp_value:
-            print(f"Error fetching Kp Index: {Kp_value['Error']}")
-            return "sepc down"
+        Kp_observe = json.loads(Kp_value["observe"])
+
+        Kp_value_nearest = Kp_observe[-1][2] if Kp_observe else "null"
+        Kp_value_max = max([int(entry[2]) for entry in Kp_observe if entry[2].isdigit()], default="null")
+
+        Kp_final = {
+            "nearest": Kp_value_nearest,
+            "max": Kp_value_max
+        }
 
         return {
             "F107": F10point7_value,
-            "ApIndex": Ap_value,
-            "KpIndex": Kp_value
+            "ApIndex": ApIndex_value,
+            "KpIndex": Kp_final
         }
 
     except Exception as e:
         print(f"Critical failure in space_weather_forecast: {str(e)}")
         return "sepc down"
-

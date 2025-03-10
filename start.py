@@ -15,6 +15,7 @@ from task.od_automation_tasks import orbit_precision_analysis_auto_task
 from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 # from utils.dailyreport_utils import get_obh
+from utils.notification_content import space_weather_report_content
 
 import warnings
 
@@ -160,7 +161,7 @@ def seireport():
             mimetype='application/json'
         )
 
-    response = sei_dingtalk_news(
+    response = space_weather_report_content(
         tf1=data['start'],
         tf2=data['end'],
         get_F10point7=get_F10point7,
@@ -168,10 +169,14 @@ def seireport():
         get_KpIndex=get_KpIndex,
         satID_list=data['satIDs'],
         mean_6element_url=mean_6element_url,
-        get_calc_result_url=get_calc_result_url
+        get_calc_result_url=get_calc_result_url,
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gnss_config=gnss_config
     )
 
-    return jsonify({"markdown": response}), 200
+    return jsonify(response), 200
 
 
 # 空间环境信息获取 //空间环境系列

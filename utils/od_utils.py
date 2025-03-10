@@ -14,18 +14,14 @@ from utils.authentication import get_header_token
 import time
 
 
-#############################################################################################################################
-#############################################################################################################################
-#############################################################################################################################
-#############################################################################################################################
-#############################################################################################################################
 def satellite_properties(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
     # Fetch the token
     token = get_header_token(post_token_url, post_token_user_name, post_token_password)
 
     # Define the headers with the required token
     headers = {
-        'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        'x-web-token': token,
         'Content-Type': 'application/json'  # Explicitly specify JSON format
     }
 
@@ -80,6 +76,58 @@ def satellite_properties(post_token_url, post_token_user_name, post_token_passwo
         return None
 
 
+def satellite_codes(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
+    # Fetch the token
+    token = get_header_token(post_token_url, post_token_user_name, post_token_password)
+
+    # Define the headers with the required token
+    headers = {
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        'x-web-token': token,
+        'Content-Type': 'application/json'  # Explicitly specify JSON format
+    }
+
+    # Ensure satIDs is a list
+    if isinstance(satIDs, str):
+        satIDs = satIDs.split(",")
+
+    # Prepare the body with the satellite IDs
+    body = {"ids": satIDs}
+
+    # Make the POST request
+    try:
+        res = requests.post(url=gnss_config, json=body, headers=headers, timeout=300)
+        res.raise_for_status()  # Raise HTTPError for non-200 responses
+
+        # Parse the JSON response
+        response = res.json()
+
+        # Extract only the required fields (code, externalCode, name)
+        satellite_list = response.get("data", {}).get("list", [])
+
+        filtered_satellites = [
+            {
+                "id": sat["id"],
+                "code": sat["code"],
+                "externalCode": sat["externalCode"],
+                "name": sat["name"]
+            }
+            for sat in satellite_list
+        ]
+
+        return filtered_satellites  # Return the filtered list
+
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+        return None
+    except KeyError as e:
+        print(f"KeyError: {e}")
+        return None
+    except IndexError as e:
+        print(f"IndexError: {e}")
+        return None
+
+
 def gnss_get_last_12(post_token_url,
                      post_token_user_name,
                      post_token_password, _influxdb, client, satIDs, gnss_config):
@@ -115,14 +163,11 @@ def ephemeris_acquire(post_token_url,
                       post_token_password, startAt, endAt, spacecraftIds, get_ephemeris):
     # Fetch the token
     token = get_header_token(post_token_url, post_token_user_name, post_token_password)
-    #############################################################################################################################
-    #############################################################################################################################
-    #############################################################################################################################
-    #############################################################################################################################
-    #############################################################################################################################
+
     # Define the headers with the required token
     headers = {
-        'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        'x-web-token': token,
         'Content-Type': 'application/json'
     }
 
@@ -428,13 +473,13 @@ def calc_alt_diff(ephemeris_list, mean_6element_url, get_calc_result_url, alt_ch
 
     # Compute mean altitudes for current and previous ephemeris
     current_altitudes = compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url)
-    print("Current Altitudes:", current_altitudes)
+    # print("Current Altitudes:", current_altitudes)
 
     time.sleep(3)  # Ensure processing time before querying results
 
     # FIXED: Use `previous_ephemeris_list` instead of `ephemeris_list`
     previous_altitudes = compute_mean_altitude(previous_ephemeris_list, mean_6element_url, get_calc_result_url)
-    print("Previous Altitudes:", previous_altitudes)
+    # print("Previous Altitudes:", previous_altitudes)
 
     # Create a mapping for easy lookup
     prev_alt_dict = {entry["spacecraftId"]: entry["altitude"] for entry in previous_altitudes}
@@ -450,5 +495,5 @@ def calc_alt_diff(ephemeris_list, mean_6element_url, get_calc_result_url, alt_ch
             alt_diff = current_alt - previous_alt
             alt_diff_list.append({"spacecraftId": spacecraft_id, "altitude_change": alt_diff})
 
-    print("Altitude Changes:", alt_diff_list)
+    # print("Altitude Changes:", alt_diff_list)
     return alt_diff_list
