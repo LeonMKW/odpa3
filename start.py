@@ -108,6 +108,9 @@ mean_6element_url = app.config['MEAN_6ELEMENT']
 # calc_results
 get_calc_result_url = app.config['GET_CALC_RESULT']
 
+# push notification
+notification_url = app.config['NOTIFICATION_URL']
+
 app = Flask(__name__)
 CORS(app)
 
@@ -173,7 +176,8 @@ def seireport():
         post_token_url=post_token_url,
         post_token_user_name=post_token_user_name,
         post_token_password=post_token_password,
-        gnss_config=gnss_config
+        gnss_config=gnss_config,
+        notificaiton_url=notification_url
     )
 
     return jsonify(response), 200
