@@ -59,6 +59,19 @@ def fetch_f107_index(url):
         return {"Error": f"Failed to process F10.7 Index data: {str(e)}"}
 
 
+# **Fix the sorting function**
+def parse_kp_time(time_str):
+    """Handles '24:00' case by converting it to '00:00' of the next day."""
+    date_part, time_part = time_str.split(" ")
+    if time_part == "24:00":
+        # Convert '24:00' to '00:00' of the next day
+        date_obj = datetime.strptime(date_part, "%Y-%m-%d") + timedelta(days=1)
+        return datetime.strptime(date_obj.strftime("%Y-%m-%d") + " 00:00", "%Y-%m-%d %H:%M")
+    else:
+        # Normal case
+        return datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+
+
 def fetch_kp_index(url):
     """
     Fetch and process Kp Index data from the provided URL.
@@ -86,16 +99,6 @@ def fetch_kp_index(url):
 
 
 def space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
-    """
-    Fetches space environment data (F10.7, Ap, and Kp indices) for the given time range.
-
-    :param tf1: Start time (13-digit Unix timestamp in milliseconds)
-    :param tf2: End time (13-digit Unix timestamp in milliseconds)
-    :param get_F10point7: URL to fetch F10.7 data
-    :param get_ApIndex: URL to fetch Ap index
-    :param get_KpIndex: URL to fetch Kp index
-    :return: JSON containing space weather data or "sepc down" if any request fails
-    """
 
     # Convert tf1 and tf2 to YYYYMMDD format
     start_date = datetime.utcfromtimestamp(int(tf1) / 1000).strftime('%Y%m%d')
@@ -190,12 +193,31 @@ def space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
         Kp_value = fetch_kp_index(Kpurl)
         Kp_observe = json.loads(Kp_value["observe"])
 
-        Kp_value_nearest = Kp_observe[-1][2] if Kp_observe else "null"
-        Kp_value_max = max([int(entry[2]) for entry in Kp_observe if entry[2].isdigit()], default="null")
+        Kp_observe = json.loads(Kp_value["observe"])
 
+        # **Find the max Kp value**
+        Kp_values = [int(entry[2]) for entry in Kp_observe if entry[2].isdigit()]
+        Kp_value_max = max(Kp_values, default="null")
+
+        # **Get all occurrences of max Kp value**
+        max_occurrences = [entry for entry in Kp_observe if int(entry[2]) == Kp_value_max]
+
+        # **Modify the sorting function**
+        if max_occurrences:
+            max_occurrences_sorted = sorted(max_occurrences, key=lambda x: parse_kp_time(x[1]))
+            Kp_value_max_time = max_occurrences_sorted[-1][1]  # Get latest max occurrence
+        else:
+            Kp_value_max_time = "null"
+
+        # **Find the nearest Kp value**
+        Kp_value_nearest = Kp_observe[-1][2] if Kp_observe else "null"
+
+        # **Final Output**
         Kp_final = {
             "nearest": Kp_value_nearest,
-            "max": Kp_value_max
+            "nearest_time": Kp_observe[-1][1] if Kp_observe else "null",
+            "max": Kp_value_max,
+            "max_time": Kp_value_max_time  # Time of max Kp occurrence
         }
 
         return {

@@ -158,11 +158,7 @@ def odpa():
 def seireport():
     data = request.json
     if not data or "start" not in data or "end" not in data or "satIDs" not in data:
-        return Response(
-            response=json.dumps({"Error": "Please provide 'start', 'end', and 'satIDs'"}),
-            status=400,
-            mimetype='application/json'
-        )
+        return jsonify({"Error": "Please provide 'start', 'end', and 'satIDs'"}), 400
 
     response = space_weather_report_content(
         tf1=data['start'],
@@ -180,7 +176,7 @@ def seireport():
         notificaiton_url=notification_url
     )
 
-    return jsonify(response), 200
+    return jsonify({"message": response}), 200
 
 
 # 空间环境信息获取 //空间环境系列
