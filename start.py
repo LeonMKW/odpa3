@@ -173,7 +173,8 @@ def seireport():
         post_token_user_name=post_token_user_name,
         post_token_password=post_token_password,
         gnss_config=gnss_config,
-        notificaiton_url=notification_url
+        notificaiton_url=notification_url,
+        notice_code=data['notice_code']
     )
 
     return jsonify({"message": response}), 200

@@ -133,7 +133,7 @@ def space_weather_report_content(tf1, tf2, get_F10point7, get_ApIndex, get_KpInd
                                  post_token_url,
                                  post_token_user_name,
                                  post_token_password,
-                                 gnss_config, notificaiton_url):
+                                 gnss_config, notificaiton_url, notice_code):
 
     try:
         current_timestamp = int(time.time()) * 1000  # Get current timestamp in **milliseconds** (13 digits)
@@ -382,7 +382,7 @@ def space_weather_report_content(tf1, tf2, get_F10point7, get_ApIndex, get_KpInd
         # Prepare the payload
         payload = {
             "System": "odpa3",
-            "NoticeCode": "daily_orbit_reporter",
+            "NoticeCode": notice_code,
             "Param": {
                 "space_env_data": {
                     "past12hoursF107": past12hoursF107,
