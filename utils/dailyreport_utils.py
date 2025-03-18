@@ -49,3 +49,16 @@ def sei_dingtalk_news(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_l
     # report_content = format_sei_report(space_env_data, satellite_data, altitude_data)
 
     return space_env_data, satellite_data, ma, ad
+
+
+def space_environment_only(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
+    # Ensure tf1 and tf2 are integers
+    tf1 = int(tf1)
+    tf2 = int(tf2)
+
+    # 1 Fetch Space Environment Data
+    space_env_data = space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
+    if space_env_data == "sepc down":
+        return {"Error": "Failed to fetch space environment data"}
+
+    return space_env_data

@@ -15,7 +15,8 @@ from task.od_automation_tasks import orbit_precision_analysis_auto_task
 from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 # from utils.dailyreport_utils import get_obh
-from utils.notification_content import space_weather_report_content
+from utils.notification_content import space_weather_report_content, space_weather_info_only, \
+    space_weather_info_with_summary
 
 import warnings
 
@@ -181,37 +182,38 @@ def seireport():
 
 
 # 空间环境信息获取 //空间环境系列
-@app.route('/space-enviroment-info', methods=['POST'])
-def sei():
+@app.route('/space-environment-info-with-no-summary', methods=['POST'])
+def space_environment_info_no_summary():
     data = request.json
     if not data or "start" not in data or "end" not in data:
-        return Response(
-            response=json.dumps({"Error": "Please provide 'start' and 'end' timestamps"}),
-            status=400,
-            mimetype='application/json'
-        )
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
 
-    try:
-        response = space_weather_forecast(
-            tf1=data['start'],
-            tf2=data['end'],
-            get_F10point7=get_F10point7,
-            get_ApIndex=get_ApIndex,
-            get_KpIndex=get_KpIndex
-        )
+    response = space_weather_info_only(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex
+    )
 
-        return Response(
-            response=json.dumps(response, ensure_ascii=False),  # Ensure correct JSON response
-            status=200,
-            mimetype='application/json'
-        )
+    return jsonify({"message": response}), 200
 
-    except Exception as e:
-        return Response(
-            response=json.dumps({"Error": f"Failed to fetch space weather data: {str(e)}"}),
-            status=500,
-            mimetype='application/json'
-        )
+
+@app.route('/space-environment-info-with-summary', methods=['POST'])
+def space_environment_info_with_summary():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = space_weather_info_with_summary(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex
+    )
+
+    return jsonify({"message": response}), 200
 
 
 # OSS2 = OSS2,
