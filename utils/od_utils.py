@@ -6,9 +6,12 @@ import pandas as pd
 import requests
 import re
 import dfply as d
+
+from utils.db import get_mongo
 from utils.flightcontrol_utils import tm_table
 import pytz
 from utils.authentication import get_header_token
+import time
 
 
 def satellite_properties(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
@@ -17,6 +20,7 @@ def satellite_properties(post_token_url, post_token_user_name, post_token_passwo
 
     # Define the headers with the required token
     headers = {
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
         'x-web-token': token,
         'Content-Type': 'application/json'  # Explicitly specify JSON format
     }
@@ -72,6 +76,58 @@ def satellite_properties(post_token_url, post_token_user_name, post_token_passwo
         return None
 
 
+def satellite_codes(post_token_url, post_token_user_name, post_token_password, gnss_config, satIDs):
+    # Fetch the token
+    token = get_header_token(post_token_url, post_token_user_name, post_token_password)
+
+    # Define the headers with the required token
+    headers = {
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        'x-web-token': token,
+        'Content-Type': 'application/json'  # Explicitly specify JSON format
+    }
+
+    # Ensure satIDs is a list
+    if isinstance(satIDs, str):
+        satIDs = satIDs.split(",")
+
+    # Prepare the body with the satellite IDs
+    body = {"ids": satIDs}
+
+    # Make the POST request
+    try:
+        res = requests.post(url=gnss_config, json=body, headers=headers, timeout=300)
+        res.raise_for_status()  # Raise HTTPError for non-200 responses
+
+        # Parse the JSON response
+        response = res.json()
+
+        # Extract only the required fields (code, externalCode, name)
+        satellite_list = response.get("data", {}).get("list", [])
+
+        filtered_satellites = [
+            {
+                "id": sat["id"],
+                "code": sat["code"],
+                "externalCode": sat["externalCode"],
+                "name": sat["name"]
+            }
+            for sat in satellite_list
+        ]
+
+        return filtered_satellites  # Return the filtered list
+
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+        return None
+    except KeyError as e:
+        print(f"KeyError: {e}")
+        return None
+    except IndexError as e:
+        print(f"IndexError: {e}")
+        return None
+
+
 def gnss_get_last_12(post_token_url,
                      post_token_user_name,
                      post_token_password, _influxdb, client, satIDs, gnss_config):
@@ -110,6 +166,7 @@ def ephemeris_acquire(post_token_url,
 
     # Define the headers with the required token
     headers = {
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
         'x-web-token': token,
         'Content-Type': 'application/json'
     }
@@ -302,100 +359,141 @@ def get_gnss_data(satellite_property, ephemeris, _influxdb, client):
     return points_df
 
 
-# def get_all_altitude(post_token_url,
-#                      post_token_user_name,
-#                      post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#     tf1 = pd.to_datetime(start).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-#     tf2 = pd.to_datetime(end).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-#
-#     # Use the modified function to get data or nearest data
-#     points = influxdb_orbdata.get_distinct_alt(client_orbdata, tf1, tf2, satellitecode)
-#
-#     points_df = pd.DataFrame(points)
-#     if len(points_df) == 0:
-#         return pd.DataFrame()  # or handle it as needed
-#
-#     return points_df
-#
-#
-# def get_altitude(post_token_url,
-#                  post_token_user_name,
-#                  post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#
-#     # Ensure the input timestamps are in the correct format
-#     tf1 = pd.to_datetime(start).strftime('%Y-%m-%dT%H:%M:%SZ')
-#     tf2 = pd.to_datetime(end).strftime('%Y-%m-%dT%H:%M:%SZ')
-#
-#     # Query data for the current interval
-#     points = influxdb_orbdata.get_distinct_alt(client_orbdata, tf1, tf2, satellitecode)
-#     points_df = pd.DataFrame(points)
-#
-#     # Print the DataFrame to check it
-#     # print(points_df.to_string())
-#
-#     return points_df
-#
-#
-# def get_phase(post_token_url,
-#               post_token_user_name,
-#               post_token_password, metedataservice_url, influxdb_orbdata, client_orbdata, satID):
-#     satellite_od_dict = satellite_properties(post_token_url,
-#                                              post_token_user_name,
-#                                              post_token_password, metedataservice_url, satID)
-#     satellitecode = satellite_od_dict['code']
-#
-#     filters = 'WHERE _satelliteCode = \'' + satellitecode + '\' '
-#
-#     # Query data for the current interval
-#     points = influxdb_orbdata.get_distinct_phase(client_orbdata, filters=filters, limit=1)
-#     points_df = pd.DataFrame(points)
-#     # 检查points_df是否为空
-#     if points_df.empty:
-#         points_df = pd.DataFrame({
-#             'time': ['0'],
-#             'phase': [0],
-#             '_satelliteCode': [satellitecode]
-#         })
-#         return points_df
-#     else:
-#         return points_df
-#
-#
-# def get_phase_new(influxdb_orbdata, client_orbdata):
-#     filter1 = 'WHERE _satelliteCode = \'GS-2 & GS-2AP01\' '
-#     filter2 = 'WHERE _satelliteCode = \'GS-2AP01 & GS-2AP02\' '
-#     filter3 = 'WHERE _satelliteCode = \'GS-2AP02 & GS-2BP01\' '
-#     filter4 = 'WHERE _satelliteCode = \'GS-2BP01 & GS-2AP03\' '
-#
-#     # Query data for the current interval
-#     points1 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter1, limit=1)
-#     points2 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter2, limit=1)
-#     points3 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter3, limit=1)
-#     points4 = influxdb_orbdata.get_distinct_phase_diff(client_orbdata, filters=filter4, limit=1)
-#
-#     # Convert each result to DataFrame
-#     points_df1 = pd.DataFrame(points1)
-#     points_df2 = pd.DataFrame(points2)
-#     points_df3 = pd.DataFrame(points3)
-#     points_df4 = pd.DataFrame(points4)
-#
-#     # Concatenate all DataFrames into one
-#     points_df = pd.concat([points_df1, points_df2, points_df3, points_df4], ignore_index=True)
-#
-#     # 检查points_df是否为空
-#     if points_df.empty:
-#         points_df = pd.DataFrame({
-#             'time': ['0'],
-#             'phase_diff': [0],
-#             '_satelliteCode': ['0']
-#         })
-#
-#     return points_df
+def compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url):
+    """
+    Compute the mean altitude for a list of ephemeris data by querying an external API.
+
+    :param ephemeris_list: List of ephemeris data dictionaries
+    :return: List of {spacecraftId, altitude} dictionaries
+    :param mean_6element_url: calc mean element from osculating element
+    :param get_calc_result_url: get result from calculation
+
+
+    """
+
+    # API endpoints
+    submit_url = mean_6element_url
+    result_url = get_calc_result_url
+
+    altitude_data = []
+
+    for ephemeris in ephemeris_list:
+        payload = {
+            "orbitElements": {
+                "epochTimeUTC": ephemeris["epochTimeUTC"],
+                "a": ephemeris["a"],
+                "e": ephemeris["e"],
+                "i": ephemeris["i"],
+                "dw": ephemeris["dw"],
+                "xw": ephemeris["xw"],
+                "M": ephemeris["M"],
+                "CD": ephemeris["CD"]
+            },
+            "version": "v2"
+        }
+
+        try:
+            # Step 1: Submit the orbit elements
+            response = requests.post(submit_url, json=payload, timeout=10)
+            response.raise_for_status()  # Raise error for non-200 responses
+
+            response_data = response.json()
+            if response_data.get("code") != 0 or "data" not in response_data:
+                print(f"Error submitting orbit data for spacecraft {ephemeris['spacecraftId']}: {response_data}")
+                continue
+
+            request_id = response_data["data"]["id"]  # Get the ID from response
+
+            # Step 2: Wait 3 seconds before checking result
+            time.sleep(2)
+
+            # Step 3: Query result with retry mechanism (Max 3 attempts)
+            for attempt in range(3):
+                result_payload = {"id": request_id}
+                result_response = requests.post(result_url, json=result_payload, timeout=10)
+                result_response.raise_for_status()
+
+                result_data = result_response.json()
+
+                # If successful, extract altitude
+                if result_data.get("code") == 0 and "data" in result_data:
+                    result_content = result_data["data"].get("resultContent", {}).get("results", [])
+                    if result_content:
+                        altitude = result_content[0].get("altitude", "N/A")
+                        altitude_data.append({"spacecraftId": ephemeris["spacecraftId"], "altitude": altitude})
+                        break  # Exit loop once we get a valid response
+
+                # If response says "calculation not completed", retry after 3 seconds
+                elif result_data.get("code") == 51006:
+                    print(f"Retrying {ephemeris['spacecraftId']} (Attempt {attempt + 1}/3): Calculation not complete.")
+                    time.sleep(3)
+                else:
+                    print(f"Error fetching result for spacecraft {ephemeris['spacecraftId']}: {result_data}")
+                    break  # Stop retrying if another error occurs
+
+            else:
+                # If we exhaust all retries, log failure
+                print(f"Failed to get altitude for spacecraft {ephemeris['spacecraftId']} after 3 attempts.")
+
+        except requests.exceptions.RequestException as e:
+            print(f"HTTP request failed for spacecraft {ephemeris['spacecraftId']}: {e}")
+
+    return altitude_data
+
+
+def calc_alt_diff(ephemeris_list, mean_6element_url, get_calc_result_url, alt_change_time=12):
+    """
+    Calculate the altitude change over a given period for each spacecraft.
+
+    :param ephemeris_list: List of ephemeris data dictionaries
+    :param mean_6element_url: URL to compute mean elements
+    :param get_calc_result_url: URL to get calculation results
+    :param alt_change_time: Time interval (in hours) to compare altitude change (default 12 hours)
+    :return: List of {spacecraftId, altitude_change} dictionaries
+    """
+
+    mongo = get_mongo()
+    previous_ephemeris_list = []
+
+    for ephemeris in ephemeris_list:
+        spacecraft_id = ephemeris["spacecraftId"]
+        current_timestamp = ephemeris["timestamp"]
+        target_timestamp = current_timestamp - (alt_change_time * 3600)  # Convert hours to seconds
+
+        # Query previous ephemeris from MongoDB
+        closest_cursor = mongo.get_doc_closest_but_not_greater("ephemeris_pa", spacecraft_id, target_timestamp)
+        closest_record = list(closest_cursor)
+
+        if closest_record:
+            previous_ephemeris_list.append(closest_record[0])  # Store the previous ephemeris
+
+    if not previous_ephemeris_list:
+        print("No previous ephemeris data found.")
+        return []
+
+    # Compute mean altitudes for current and previous ephemeris
+    current_altitudes = compute_mean_altitude(ephemeris_list, mean_6element_url, get_calc_result_url)
+    # print("Current Altitudes:", current_altitudes)
+
+    time.sleep(3)  # Ensure processing time before querying results
+
+    # FIXED: Use `previous_ephemeris_list` instead of `ephemeris_list`
+    previous_altitudes = compute_mean_altitude(previous_ephemeris_list, mean_6element_url, get_calc_result_url)
+    # print("Previous Altitudes:", previous_altitudes)
+
+    # Create a mapping for easy lookup
+    prev_alt_dict = {entry["spacecraftId"]: entry["altitude"] for entry in previous_altitudes}
+
+    alt_diff_list = []
+
+    for entry in current_altitudes:
+        spacecraft_id = entry["spacecraftId"]
+        current_alt = entry["altitude"]
+        previous_alt = prev_alt_dict.get(spacecraft_id, None)
+
+        if previous_alt is not None:
+            alt_diff = current_alt - previous_alt
+            alt_diff_list.append({"spacecraftId": spacecraft_id, "altitude_change": alt_diff})
+
+    # print("Altitude Changes:", alt_diff_list)
+    return alt_diff_list

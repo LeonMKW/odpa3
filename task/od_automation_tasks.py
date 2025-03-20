@@ -43,7 +43,9 @@ def orbit_precision_analysis_auto_task(post_token_url,
         # Extract ephemeris_id and timestamp
         ephemeris_id = ephemeris.get('id')
         epoch_time_utc = ephemeris['epochTimeUTC']
-        tf1_timestamp = int(datetime.strptime(epoch_time_utc, '%Y-%m-%dT%H:%M:%S.%fZ').timestamp())  # Convert to timestamp
+
+        # Ensure correct timestamp conversion (WITHOUT -8 hours adjustment)
+        tf1_timestamp = int(datetime.strptime(epoch_time_utc, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.utc).timestamp())
         tf2_timestamp = tf1_timestamp + 12 * 3600  # Add 12 hours
 
         # Step 2: Perform orbit precision calculation and get the merged JSON
@@ -64,11 +66,11 @@ def orbit_precision_analysis_auto_task(post_token_url,
 
         if existing_ephemeris:
             logging.info(f"Ephemeris ID {ephemeris_id} already exists in 'ephemeris_pa'. Updating the record.")
-            ephemeris_with_err['timestamp'] = tf1_timestamp  # Add timestamp to ensure consistency
+            ephemeris_with_err['timestamp'] = tf1_timestamp  # Store UTC timestamp directly
             mongo.update_one_data(data=ephemeris_with_err, collection='ephemeris_pa', composite_key=ephemeris_query)
         else:
             logging.info(f"Ephemeris ID {ephemeris_id} does not exist in 'ephemeris_pa'. Creating a new record.")
-            ephemeris_with_err['timestamp'] = tf1_timestamp  # Add timestamp to the record
+            ephemeris_with_err['timestamp'] = tf1_timestamp  # Store UTC timestamp directly
             mongo.write_one_data(data=ephemeris_with_err, collection='ephemeris_pa')
 
         # Prepare merged_json for MongoDB
@@ -99,8 +101,8 @@ def orbit_precision_analysis_auto_task(post_token_url,
                 f"record.")
             mongo.write_one_data(data=propagation_record, collection='propagation_pa')
 
-        # Add Beijing time to ephemeris
-        utc = pytz.timezone('UTC')
+        # Add Beijing time separately, for **reference only**, not for database storage
+        utc = pytz.utc
         beijing = pytz.timezone('Asia/Shanghai')
         timestamp_utc = datetime.strptime(ephemeris_with_err['epochTimeUTC'], '%Y-%m-%dT%H:%M:%S.%fZ')
         utc_dt = utc.localize(timestamp_utc)  # Localize UTC time
@@ -109,7 +111,6 @@ def orbit_precision_analysis_auto_task(post_token_url,
 
         # Log results
         logging.info(f"{satIDs} odpa pipeline complete")
-        # logging.info(f"Updated ephemeris with errors: {ephemeris_with_err}")
 
     return "odpa_task_end"
 

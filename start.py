@@ -10,12 +10,15 @@ from bson import ObjectId
 from flask_cors import CORS
 from utils import db
 
+from utils.space_weather_forecast import space_weather_forecast
 from task.od_automation_tasks import orbit_precision_analysis_auto_task
+from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 # from utils.dailyreport_utils import get_obh
+from utils.notification_content import space_weather_report_content, space_weather_info_only, \
+    space_weather_info_with_summary
 
 import warnings
-
 
 warnings.filterwarnings('ignore')
 
@@ -49,7 +52,7 @@ client_orbdata = influxdb_orbdata.connect(app.config['INFLUXDB_HOST'],
                                           app.config['INFLUXDB_PORT'])
 
 # orbit_service = app.config['ORBIT_SERVICE']
-# mete_data_service = app.config['METE_DATA']
+mete_data_service = app.config['METE_DATA']
 # orbit_propagation = app.config['ORBIT_PROPAGATION']
 # orbit_maneuver = app.config['ORBIT_MANEUVER']
 
@@ -67,13 +70,6 @@ orbit_prop_url = app.config['ORBIT_PROPAGATION']
 
 # 加载轨控活动查询
 orbit_maneuver_url = app.config['ORBIT_MANEUVER']
-
-# 加载mariadb
-# mariadbsetup = db.Mariadb(app.config['MARIADB_HOST'],
-#                           app.config['MARIADB_PORT'],
-#                           app.config['MARIADB_ODDBNAME'],
-#                           app.config['MARIADB_USER'],
-#                           app.config['MARIADB_PASSWORD'])
 
 # 连OSS
 OSS2 = db.OSS2(app.config['OSS2_ENDPOINT'],
@@ -103,6 +99,18 @@ get_ephemeris = app.config["GET_EPHEMERIS"]
 
 # getting some cool shit
 get_F10point7 = app.config['GET_F10POINT7']
+
+# getting more cool stuff
+get_ApIndex = app.config['GET_APINDEX']
+get_KpIndex = app.config['GET_KPINDEX']
+
+# mean_6elements
+mean_6element_url = app.config['MEAN_6ELEMENT']
+# calc_results
+get_calc_result_url = app.config['GET_CALC_RESULT']
+
+# push notification
+notification_url = app.config['NOTIFICATION_URL']
 
 app = Flask(__name__)
 CORS(app)
@@ -145,6 +153,68 @@ def odpa():
         satID_list=data['satIDs']
     )
     return jsonify(response), 200
+
+
+@app.route('/sei-dingtalk-news', methods=['POST'])
+def seireport():
+    data = request.json
+    if not data or "start" not in data or "end" not in data or "satIDs" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end', and 'satIDs'"}), 400
+
+    response = space_weather_report_content(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex,
+        satID_list=data['satIDs'],
+        mean_6element_url=mean_6element_url,
+        get_calc_result_url=get_calc_result_url,
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gnss_config=gnss_config,
+        notificaiton_url=notification_url,
+        notice_code=data['notice_code']
+    )
+
+    return jsonify({"message": response}), 200
+
+
+# 空间环境信息获取 //空间环境系列
+@app.route('/space-environment-info-with-no-summary', methods=['POST'])
+def space_environment_info_no_summary():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = space_weather_info_only(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex
+    )
+
+    return jsonify({"message": response}), 200
+
+
+@app.route('/space-environment-info-with-summary', methods=['POST'])
+def space_environment_info_with_summary():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = space_weather_info_with_summary(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex
+    )
+
+    return jsonify({"message": response}), 200
+
 
 # OSS2 = OSS2,
 # note_url = note_url,
