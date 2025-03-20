@@ -3,7 +3,7 @@ import pandas as pd
 import pytz
 import dfply as d
 from datetime import datetime, timedelta
-from utils.flightcontrol_utils import tm_table, obc_resetnew
+from utils.flightcontrol_utils import tm_table
 from utils.db import get_mongo
 
 

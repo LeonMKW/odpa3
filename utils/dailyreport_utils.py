@@ -1,82 +1,64 @@
-import logging
-import pprint
 import json
-import pandas as pd
-from requests import post
-import pytz
-from datetime import datetime, timedelta
-from utils.db import get_mongo
-from dateutil import parser
 import requests
-import arrow
+import pandas as pd
 from utils.authentication import get_header_token
+import logging
+from datetime import datetime
+from utils.db import get_mongo
+from utils.space_weather_forecast import space_weather_forecast
+from utils.od_utils import compute_mean_altitude, calc_alt_diff
 
-# def obp(cur, satellitecode):
-#     # orbit status
-#     query_orbit_precision = f"""
-#     SELECT *
-#     FROM orbit_precision_summary
-#     WHERE spacecraft = '{satellitecode}'
-#     ORDER BY timestamp DESC
-#     LIMIT 1;
-#     """
-#
-#     cur.execute(query_orbit_precision)
-#     op = cur.fetchone()
-#     obp_df = pd.DataFrame([op])
-#     # Drop unnecessary columns
-#     obp_df = obp_df[['mse']]
-#     return obp_df
 
-# def get_obh(post_token_url,
-#             post_token_user_name,
-#             post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end):
-#     satI = satID.split(",")  # Split the comma-separated satellite IDs into a list
-#     all_altitudes = []
-#
-#     for sat in satI:
-#         altitude_df = get_all_altitude(post_token_url,
-#                                        post_token_user_name,
-#                                        post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, sat,
-#                                        start, end)
-#         altitude_df['alt'] = round(altitude_df['alt'] / 1000, 3)
-#         altitude_df['_satelliteCode'] = altitude_df['_satelliteCode']
-#         all_altitudes.append(altitude_df[['alt', '_satelliteCode']])
-#
-#     # Combine all altitude dataframes into one
-#     combined_df = pd.concat(all_altitudes, ignore_index=True)
-#     result = combined_df.to_dict(orient='records')  # Convert DataFrame to a list of dictionaries
-#
-#     return json.dumps(result)
-#
-#
-# def obh(post_token_url,
-#         post_token_user_name,
-#         post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end):
-#     # Assumes start and end are defined here or passed to this function
-#     altitude = get_altitude(post_token_url,
-#                             post_token_user_name,
-#                             post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID, start, end)
-#     # print(altitude)
-#     altitude['alt'] = round(altitude['alt'] / 1000, 3)
-#     altitude = altitude[['alt']]
-#
-#     return altitude
-#
-#
-# def o2pphase(post_token_url,
-#              post_token_user_name,
-#              post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID):
-#     phase = get_phase(post_token_url,
-#                       post_token_user_name,
-#                       post_token_password, mete_data_service, influxdb_orbdata, client_orbdata, satID)
-#     phase['phase'] = round(phase['phase'], 3)
-#     phase = phase[['phase']]
-#     return phase
-#
-#
-# def o2pphase_new(influxdb_orbdata, client_orbdata):
-#     phase = get_phase_new(influxdb_orbdata, client_orbdata)
-#     phase['phase_diff'] = round(phase['phase_diff'], 3)
-#     return phase
+def sei_dingtalk_news(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_list,
+                      mean_6element_url, get_calc_result_url):
+    # Ensure tf1 and tf2 are integers
+    tf1 = int(tf1)
+    tf2 = int(tf2)
 
+    mongo = get_mongo()
+    satIDs = satID_list.split(",")
+
+    # 1 Fetch Space Environment Data
+    space_env_data = space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
+    if space_env_data == "sepc down":
+        return {"Error": "Failed to fetch space environment data"}
+
+    # print(space_env_data)
+
+    # 2 Fetch Satellite Data from MongoDB (Closest Record Not Less Than tf1)
+    satellite_data = []
+    for satID in satIDs:
+        closest_cursor = mongo.get_doc_closest_but_not_less("ephemeris_pa", satID, tf1 // 1000)
+
+        # Ensure all documents are added (not just one satellite)
+        closest_records = list(closest_cursor)  # Convert cursor to list
+
+        if closest_records:  # Append all found records
+            satellite_data.extend(closest_records)
+
+    # print(satellite_data)
+
+    # 3 Fetch Satellite Data from MongoDB (Closest Record Not Less Than tf1)
+    ma = compute_mean_altitude(satellite_data, mean_6element_url, get_calc_result_url)
+    # print(ma)
+    # 4 altitude change
+    ad = calc_alt_diff(satellite_data, mean_6element_url, get_calc_result_url, alt_change_time=12)
+    # print(ad)
+
+    # Format the Data for DingTalk
+    # report_content = format_sei_report(space_env_data, satellite_data, altitude_data)
+
+    return space_env_data, satellite_data, ma, ad
+
+
+def space_environment_only(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
+    # Ensure tf1 and tf2 are integers
+    tf1 = int(tf1)
+    tf2 = int(tf2)
+
+    # 1 Fetch Space Environment Data
+    space_env_data = space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
+    if space_env_data == "sepc down":
+        return {"Error": "Failed to fetch space environment data"}
+
+    return space_env_data
