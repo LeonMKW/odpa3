@@ -16,7 +16,8 @@ from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 # from utils.dailyreport_utils import get_obh
 from utils.notification_content import space_weather_report_content, space_weather_info_only, \
-    space_weather_info_with_summary
+    space_weather_info_with_summary, space_weather_orbit_pdf_report
+
 
 import warnings
 
@@ -176,6 +177,31 @@ def seireport():
         gnss_config=gnss_config,
         notificaiton_url=notification_url,
         notice_code=data['notice_code']
+    )
+
+    return jsonify({"message": response}), 200
+
+
+@app.route('/sei-orbit-report', methods=['POST'])
+def sei_orbit_pdfreport():
+    data = request.json
+
+    if not data or "start" not in data or "end" not in data or "satIDs" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end', and 'satIDs'"}), 400
+
+    response = space_weather_orbit_pdf_report(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex,
+        satID_list=data['satIDs'],
+        mean_6element_url=mean_6element_url,
+        get_calc_result_url=get_calc_result_url,
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gnss_config=gnss_config
     )
 
     return jsonify({"message": response}), 200
