@@ -961,3 +961,55 @@ def space_weather_orbit_pdf_report(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
     create_space_weather_report(filename, report_data, raw_space_env_data)
 
     return f"Report successfully generated: {filename}"
+
+
+def space_weather_orbit_pdf_report_alicoud(tf1, tf2,
+                                           get_F10point7, get_ApIndex, get_KpIndex,
+                                           satID_list,
+                                           mean_6element_url, get_calc_result_url,
+                                           post_token_url,
+                                           post_token_user_name,
+                                           post_token_password,
+                                           gnss_config,
+                                           OSS2
+                                           ):
+    """
+    Generates a PDF report, uploads it to Alibaba Cloud OSS using the given OSS2 object,
+    and returns the signed URL.
+    """
+    # 1) Generate your normal orbit/space environment data
+    report_data = generate_sei_and_orbit_content(
+        tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_list,
+        mean_6element_url, get_calc_result_url,
+        post_token_url, post_token_user_name, post_token_password,
+        gnss_config
+    )
+
+    raw_space_env_data = space_weather_report_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
+
+    # 2) Create a local PDF file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, '..'))
+    output_folder = os.path.join(project_root, "data")
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Unique filename
+    local_filename = f"space_weather_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    local_path = os.path.join(output_folder, local_filename)
+
+    # Generate the report locally
+    create_space_weather_report(local_path, report_data, raw_space_env_data)
+
+    # 3) Upload to OSS
+    oss_key = f"pdf-reports/{local_filename}"
+    OSS2.upload_file(oss_key, local_path)
+
+    # 4) Get the signed URL (optional)
+    report_url = OSS2.make_url(oss_key)
+
+    # 5) Delete the local file if you don't need it anymore
+    os.remove(local_path)
+
+    # 6) Return success message with the signed URL
+    return f"Report successfully uploaded {local_filename} to OSS: {report_url}"
+
