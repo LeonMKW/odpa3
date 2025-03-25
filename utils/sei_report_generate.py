@@ -1,12 +1,23 @@
-import os
+import os, io
+import matplotlib
+
+matplotlib.use('Agg')  # Required in headless environments
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, PageBreak, Image, Frame,
-                                PageTemplate)
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle,
+                                Spacer, Image)
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
+from reportlab.platypus.flowables import HRFlowable
 from reportlab.lib import colors
+import time, json
+import pytz
+from datetime import datetime, timedelta
 
 # Register Chinese font
 pdfmetrics.registerFont(TTFont('SimSun', 'fonts/simsun.ttc', subfontIndex=0))
@@ -80,10 +91,16 @@ def footer(canvas, doc):
     canvas.restoreState()
 
 
-def create_space_weather_report(filename, report_data):
+def create_space_weather_report(filename, report_data, raw_space_env_data):
     doc = SimpleDocTemplate(filename, pagesize=A4,
                             rightMargin=inch, leftMargin=inch,
                             topMargin=inch, bottomMargin=inch + 50)
+    """
+    :param filename: The PDF filename to save
+    :param report_data: Your normal 'report_data' dict (orbit data, etc.)
+    :param raw_space_env_data: The 'space_weather_report_raw' return dict
+                               containing 'full_F107', 'full_ApIndex', 'Kp_values', etc.
+    """
 
     chinese_style = ParagraphStyle(
         name='Chinese',
@@ -95,14 +112,22 @@ def create_space_weather_report(filename, report_data):
     chinese_title_style = ParagraphStyle(
         name='ChineseTitle',
         fontName='SimSun',
-        fontSize=18,
+        fontSize=24,
+        leading=22,
+        alignment=1,
+    )
+
+    chinese_paragraph_title_style = ParagraphStyle(
+        name='ChineseTitle',
+        fontName='SimSun',
+        fontSize=16,
         leading=22,
         alignment=1,
     )
 
     story = []
 
-    # Logo at top-left
+    # --- 1) Logo
     logo_path = os.path.join('resources', 'yhhtlogo.png')
     if os.path.exists(logo_path):
         logo = Image(logo_path, width=80, height=80)
@@ -110,25 +135,28 @@ def create_space_weather_report(filename, report_data):
         story.append(logo)
         story.append(Spacer(1, 20))
 
-    # Title
+    # --- 2) Title
     story.append(Paragraph(
-        f"银河航天长管卫星轨道和空间环境{report_data['timeofday']}",
+        f"银河航天卫星轨道和空间环境{report_data['timeofday']}",
         chinese_title_style))
     story.append(Spacer(1, 10))
 
-    # Report Generation Time (Centered)
+    # --- 3) Report Generation Time (Centered)
     centered_style = ParagraphStyle(name='centered', fontName='SimSun', fontSize=14, alignment=1, textColor=colors.red)
     story.append(Paragraph(
         f"报告生成时间: {report_data['eventTimeStr']}",
         centered_style))
-    story.append(Spacer(1, 10))
-
-    # Longer and thicker Red line
     story.append(Spacer(1, 5))
-    story.append(
-        Paragraph("<para align='center'><font color='red' size='30'>_____________________________</font></para>",
-                  chinese_style))
-    story.append(Spacer(1, 40))
+
+    # Immediately after your title or paragraph
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.red, spaceBefore=20, spaceAfter=20))
+
+    # 新增段落标题
+
+    story.append(Paragraph(
+        f"空间环境",
+        chinese_paragraph_title_style))
+    story.append(Spacer(1, 15))
 
     # Space weather summary table
     space_env = report_data['space_env_data']
@@ -169,6 +197,274 @@ def create_space_weather_report(filename, report_data):
     story.append(Paragraph(env_summary, chinese_style))
     story.append(Spacer(1, 20))
 
+    #  ============= NEW: Generate F10.7 and Ap line plots =============
+
+    def parse_md_to_datetime(md_string, year=2025):
+        """
+        Parses a 'MM-DD' string (e.g. '03-17') into a datetime with a default year.
+        """
+        return datetime.strptime(f"{year}-{md_string}", "%Y-%m-%d")
+
+    # 1. Convert request_time to Beijing datetime
+    request_time_ms = raw_space_env_data["space_env_data"].get("request_time")  # e.g. 1742400000000
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    if request_time_ms is None:
+        request_dt_beijing = datetime.now(tz=beijing_tz)
+    else:
+        utc_dt = datetime.utcfromtimestamp(request_time_ms / 1000.0)
+        beijing_tz = pytz.timezone('Asia/Shanghai')
+        request_dt_beijing = utc_dt.replace(tzinfo=pytz.utc).astimezone(beijing_tz)
+
+    # Define the date window: [request_dt - 4 days, request_dt + 3 days]
+    min_dt = request_dt_beijing - timedelta(days=5)
+    max_dt = request_dt_beijing + timedelta(days=5)
+
+    #################################################################
+    # F107
+    #################################################################
+    f107_data = raw_space_env_data["space_env_data"]["full_F107"]  # { "observed": {...}, "predicted": {...} }
+
+    # Observed
+    f107_obs_x = json.loads(f107_data["observed"]["xaxis"])  # e.g. ["03-11","03-12",...]
+    f107_obs_vals = json.loads(f107_data["observed"]["value"])
+    # Predicted
+    f107_pred_x = json.loads(f107_data["predicted"]["xaxis"])
+    f107_pred_vals = json.loads(f107_data["predicted"]["value"])
+
+    # Convert to date objects
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+
+    def convert_to_dateval(x_list, v_list):
+        dt_list, val_list = [], []
+        for date_str, val_str in zip(x_list, v_list):
+            dt_utc = parse_md_to_datetime(date_str, year=request_dt_beijing.year)
+            dt_utc = dt_utc.replace(tzinfo=pytz.utc)
+            dt_bj = dt_utc.astimezone(beijing_tz)
+            if val_str in (None, "null"):
+                dt_list.append(dt_bj)
+                val_list.append(None)
+            else:
+                dt_list.append(dt_bj)
+                val_list.append(float(val_str))
+        return dt_list, val_list
+
+    f107_obs_dates, f107_obs_values = convert_to_dateval(f107_obs_x, f107_obs_vals)
+    f107_pred_dates, f107_pred_values = convert_to_dateval(f107_pred_x, f107_pred_vals)
+
+    # Filter by pivot (e.g. 03-20) or skip if you prefer?
+    # We'll skip pivot logic and just label them red vs. blue for Observed vs. Predicted
+    # Then filter to [min_dt, max_dt]
+
+    obs_dates2, obs_vals2 = [], []
+    for d, v in zip(f107_obs_dates, f107_obs_values):
+        if v is not None and (min_dt <= d <= max_dt):
+            obs_dates2.append(d)
+            obs_vals2.append(v)
+
+    pred_dates2, pred_vals2 = [], []
+    for d, v in zip(f107_pred_dates, f107_pred_values):
+        if v is not None and (min_dt <= d <= max_dt):
+            pred_dates2.append(d)
+            pred_vals2.append(v)
+
+    # Plot F10.7
+    plt.rc('font', family='SimSun')  # set font to SimSun for Chinese text
+    plt.figure(figsize=(5, 3))
+    ax = plt.gca()
+
+    ax.plot(obs_dates2, obs_vals2, color='red', marker='o', markerfacecolor='white', markersize=5, label='实际')
+    for x_val, y_val in zip(obs_dates2, obs_vals2):
+        ax.text(x_val, y_val + 1, f"{y_val:.0f}", color='red', ha='center')
+
+    ax.plot(pred_dates2, pred_vals2, color='blue', marker='o', markerfacecolor='white', markersize=5, label='预测')
+    for x_val, y_val in zip(pred_dates2, pred_vals2):
+        ax.text(x_val, y_val + 1, f"{y_val:.0f}", color='blue', ha='center')
+
+    ax.set_title("F10.7 Index")
+    ax.set_xlabel("日期")
+    ax.set_ylabel("F10.7")
+    ax.legend()
+
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+    plt.xticks(rotation=45, ha='right')
+
+    ax.yaxis.set_major_locator(MultipleLocator(10))
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.tick_params(which='both', direction='in')
+
+    plt.tight_layout()
+    buf_f107 = io.BytesIO()
+    plt.savefig(buf_f107, format='png')
+    plt.close()
+    buf_f107.seek(0)
+
+    f107_img = Image(buf_f107, width=400, height=220)
+    story.append(f107_img)
+    story.append(Spacer(1, 10))
+
+    #################################################################
+    # Ap
+    #################################################################
+    ap_data = raw_space_env_data["space_env_data"]["full_ApIndex"]  # { "observed": {...}, "predicted": {...} }
+
+    ap_obs_x = json.loads(ap_data["observed"]["xaxis"])
+    ap_obs_vals = json.loads(ap_data["observed"]["value"])
+    ap_pred_x = json.loads(ap_data["predicted"]["xaxis"])
+    ap_pred_vals = json.loads(ap_data["predicted"]["value"])
+
+    ap_obs_dates, ap_obs_values = convert_to_dateval(ap_obs_x, ap_obs_vals)
+    ap_pred_dates, ap_pred_values = convert_to_dateval(ap_pred_x, ap_pred_vals)
+
+    obs_dates2_ap, obs_vals2_ap = [], []
+    for d, v in zip(ap_obs_dates, ap_obs_values):
+        if v is not None and (min_dt <= d <= max_dt):
+            obs_dates2_ap.append(d)
+            obs_vals2_ap.append(v)
+
+    pred_dates2_ap, pred_vals2_ap = [], []
+    for d, v in zip(ap_pred_dates, ap_pred_values):
+        if v is not None and (min_dt <= d <= max_dt):
+            pred_dates2_ap.append(d)
+            pred_vals2_ap.append(v)
+
+    plt.figure(figsize=(5, 3))
+    ax2 = plt.gca()
+
+    ax2.plot(obs_dates2_ap, obs_vals2_ap, color='red', marker='o',  markerfacecolor='white', markersize=5, label='实际')
+    for x_val, y_val in zip(obs_dates2_ap, obs_vals2_ap):
+        ax2.text(x_val, y_val + 1, f"{y_val:.0f}", color='red', ha='center')
+
+    ax2.plot(pred_dates2_ap, pred_vals2_ap, color='blue', marker='o', markerfacecolor='white', markersize=5, label='预测')
+    for x_val, y_val in zip(pred_dates2_ap, pred_vals2_ap):
+        ax2.text(x_val, y_val + 1, f"{y_val:.0f}", color='blue', ha='center')
+
+    ax2.set_title("Ap Index")
+    ax2.set_xlabel("日期")
+    ax2.set_ylabel("Ap")
+    ax2.legend()
+
+    ax2.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+    plt.xticks(rotation=45, ha='right')
+
+    ax2.yaxis.set_major_locator(MultipleLocator(5))
+    ax2.yaxis.set_minor_locator(AutoMinorLocator())
+    ax2.tick_params(which='both', direction='in')
+
+    plt.tight_layout()
+    buf_ap = io.BytesIO()
+    plt.savefig(buf_ap, format='png')
+    plt.close()
+    buf_ap.seek(0)
+
+    ap_img = Image(buf_ap, width=400, height=220)
+    story.append(ap_img)
+    story.append(Spacer(1, 10))
+
+    # --- 3rd Plot: Kp Bar Chart with 3-hour intervals ---
+    kp_data_list = raw_space_env_data["space_env_data"].get("Kp_values", [])
+    # Take the last 5 entries
+    kp_data_last5 = kp_data_list[-5:]
+
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+
+    def parse_kp_time_to_datetime(time_str):
+        """Parses '2025-03-24 3:00' or '2025-03-24 24:00' -> Beijing tz datetime."""
+        if '24:' in time_str:
+            day_part = time_str.split(' ')[0]
+            dt_obj = datetime.strptime(day_part, '%Y-%m-%d')
+            dt_obj += timedelta(days=1)
+            new_str = dt_obj.strftime('%Y-%m-%d') + ' 00:00'
+            return parse_kp_time_to_datetime(new_str)
+        else:
+            dt_utc = datetime.strptime(time_str, '%Y-%m-%d %H:%M')
+            dt_utc = dt_utc.replace(tzinfo=pytz.utc)
+            return dt_utc.astimezone(beijing_tz)
+
+    def get_kp_color(kp_val):
+        """ Returns fill color for the bar based on the Kp value. """
+        if kp_val <= 3:
+            return 'green'
+        elif kp_val <= 5:
+            return 'yellow'
+        elif kp_val <= 7:
+            return 'orange'
+        else:
+            return 'red'
+
+    plt.figure(figsize=(5.5, 3))
+    plt.rc('font', family='SimSun')  # Set Chinese font if desired
+
+    ax3 = plt.gca()
+    import matplotlib.dates as mdates
+
+    bar_width_days = 3.0 / 24.0  # 3 hours in days (Matplotlib date units)
+
+    x_vals, y_vals, bar_colors = [], [], []
+    for entry in kp_data_last5:
+        t_str = entry['time']  # '2025-03-25 3:00'
+        v_str = entry['value']  # '4'
+        dt_bj = parse_kp_time_to_datetime(t_str)
+        kp_val = float(v_str)
+
+        x_left = mdates.date2num(dt_bj)
+        x_vals.append(x_left)
+        y_vals.append(kp_val)
+        bar_colors.append(get_kp_color(kp_val))
+
+    bars = ax3.bar(
+        x_vals, y_vals,
+        width=bar_width_days,
+        bottom=0,
+        color=bar_colors,
+        edgecolor='black',
+        linewidth=1.5
+    )
+
+    # Label each bar
+    for bar in bars:
+        # bar is a Rectangle object
+        height = bar.get_height()
+        x_center = bar.get_x() + bar.get_width() / 2.0
+        # Place label above the top
+        ax3.text(x_center, height + 0.2, f"{height:.0f}", ha='center', va='bottom')
+
+    ax3.set_title("最近12小时观测Kp值")
+    ax3.set_xlabel("日期")
+    ax3.set_ylabel("Kp指数")
+    ax3.set_ylim(0, 9)
+    ax3.set_yticks([0, 2, 4, 6, 8])
+
+    # Format x-axis with date/time
+    ax3.xaxis_date()
+    ax3.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax3.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+    plt.xticks(rotation=45, ha='right')
+
+    ax3.yaxis.set_minor_locator(AutoMinorLocator())
+    ax3.tick_params(which='both', direction='in')
+
+    plt.tight_layout()
+    buf_kp = io.BytesIO()
+    plt.savefig(buf_kp, format='png')
+    plt.close()
+    buf_kp.seek(0)
+
+    kp_img = Image(buf_kp, width=400, height=220)
+    story.append(kp_img)
+    story.append(Spacer(1, 20))
+
+    # ============= End of new plots ==================
+
+    # 新增在轨卫星轨道变化情况
+
+    story.append(Paragraph(
+        f"在轨卫星轨道变化",
+        chinese_paragraph_title_style))
+    story.append(Spacer(1, 10))
+
     # Satellite Data Table
     satellite_data = report_data['satellite_data']
     data = [
@@ -187,7 +483,7 @@ def create_space_weather_report(filename, report_data):
             f"{sat['altitude_change']}米"
         ])
 
-    table = Table(data, colWidths=[60, 100, 60, 60, 60, 60, 60], rowHeights=50)
+    table = Table(data, colWidths=[60, 90, 60, 60, 60, 70, 60], rowHeights=50)
     table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), 'SimSun'),
         ('FONTSIZE', (0, 0), (-1, -1), 12),

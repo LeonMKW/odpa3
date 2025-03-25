@@ -14,10 +14,8 @@ from utils.space_weather_forecast import space_weather_forecast
 from task.od_automation_tasks import orbit_precision_analysis_auto_task
 from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
-# from utils.dailyreport_utils import get_obh
 from utils.notification_content import space_weather_report_content, space_weather_info_only, \
-    space_weather_info_with_summary, space_weather_orbit_pdf_report
-
+    space_weather_info_with_summary, space_weather_orbit_pdf_report, space_weather_report_raw
 
 import warnings
 
@@ -156,6 +154,7 @@ def odpa():
     return jsonify(response), 200
 
 
+# 空间环境信息获取 //空间环境系列
 @app.route('/sei-dingtalk-news', methods=['POST'])
 def seireport():
     data = request.json
@@ -207,7 +206,6 @@ def sei_orbit_pdfreport():
     return jsonify({"message": response}), 200
 
 
-# 空间环境信息获取 //空间环境系列
 @app.route('/space-environment-info-with-no-summary', methods=['POST'])
 def space_environment_info_no_summary():
     data = request.json
@@ -232,6 +230,23 @@ def space_environment_info_with_summary():
         return jsonify({"Error": "Please provide 'start', 'end'"}), 400
 
     response = space_weather_info_with_summary(
+        tf1=data['start'],
+        tf2=data['end'],
+        get_F10point7=get_F10point7,
+        get_ApIndex=get_ApIndex,
+        get_KpIndex=get_KpIndex
+    )
+
+    return jsonify({"message": response}), 200
+
+
+@app.route('/space-environment-data-raw', methods=['POST'])
+def space_enviroment_data_raw():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = space_weather_report_raw(
         tf1=data['start'],
         tf2=data['end'],
         get_F10point7=get_F10point7,
