@@ -30,6 +30,25 @@ chinese_style = ParagraphStyle(
 )
 
 
+def get_request_beijing_datetime(raw_space_env_data):
+
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    request_time_ms = raw_space_env_data["space_env_data"].get("request_time")  # e.g. 1742400000000
+
+    if request_time_ms is None:
+        return datetime.now(tz=beijing_tz)
+    else:
+        utc_dt = datetime.utcfromtimestamp(request_time_ms / 1000.0)
+        return utc_dt.replace(tzinfo=pytz.utc).astimezone(beijing_tz)
+
+def get_request_beijing_datetime_minus12h(raw_space_env_data):
+    """
+    Returns the Beijing datetime of request_time minus 12 hours.
+    If request_time is absent/None, returns current Beijing time minus 12 hours.
+    """
+    dt_beijing = get_request_beijing_datetime(raw_space_env_data)
+    return dt_beijing - timedelta(hours=12)
+
 def get_solar_status(value):
     if value is None or value == "暂无数据":
         return Paragraph("暂无数据", chinese_style)
@@ -141,24 +160,30 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
         chinese_title_style))
     story.append(Spacer(1, 10))
 
-    # --- 3) Report Generation Time (Centered)
+    # --- 3) Report Analysis Time (Centered)
+    start_time = get_request_beijing_datetime_minus12h(raw_space_env_data)
+    end_time = get_request_beijing_datetime(raw_space_env_data)
+
     centered_style = ParagraphStyle(name='centered', fontName='SimSun', fontSize=14, alignment=1, textColor=colors.red)
-    story.append(Paragraph(
-        f"报告生成时间: {report_data['eventTimeStr']}",
-        centered_style))
+    story.append(
+        Paragraph(
+            f"报告分析时段: {start_time.strftime('%Y-%m-%d %H:%M')} 至 {end_time.strftime('%Y-%m-%d %H:%M')}",
+            centered_style
+        )
+    )
     story.append(Spacer(1, 5))
 
-    # Immediately after your title or paragraph
+    # --- 4) Big Red Line
     story.append(HRFlowable(width="100%", thickness=2, color=colors.red, spaceBefore=20, spaceAfter=20))
 
-    # 新增段落标题
+    # --- 5) Topic1
 
     story.append(Paragraph(
         f"空间环境",
         chinese_paragraph_title_style))
     story.append(Spacer(1, 15))
 
-    # Space weather summary table
+    # --- 6) Space weather summary table
     space_env = report_data['space_env_data']
 
     solar_today = get_solar_status(space_env.get('F107_today'))
@@ -185,7 +210,7 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     story.append(summary_table)
     story.append(Spacer(1, 20))
 
-    # Space Environment Data
+    # --- 7) Space weather summary word
     env_summary = (
         f"过去12小时F10.7指数: {space_env['past12hoursF107']}<br/>"
         f"过去12小时Kp指数: {space_env['past12hoursKp']}<br/>"
@@ -197,27 +222,16 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     story.append(Paragraph(env_summary, chinese_style))
     story.append(Spacer(1, 20))
 
+    # --- 8) Plotting
     #  ============= NEW: Generate F10.7 and Ap line plots =============
 
     def parse_md_to_datetime(md_string, year=2025):
-        """
-        Parses a 'MM-DD' string (e.g. '03-17') into a datetime with a default year.
-        """
+
         return datetime.strptime(f"{year}-{md_string}", "%Y-%m-%d")
 
-    # 1. Convert request_time to Beijing datetime
-    request_time_ms = raw_space_env_data["space_env_data"].get("request_time")  # e.g. 1742400000000
-    beijing_tz = pytz.timezone('Asia/Shanghai')
-    if request_time_ms is None:
-        request_dt_beijing = datetime.now(tz=beijing_tz)
-    else:
-        utc_dt = datetime.utcfromtimestamp(request_time_ms / 1000.0)
-        beijing_tz = pytz.timezone('Asia/Shanghai')
-        request_dt_beijing = utc_dt.replace(tzinfo=pytz.utc).astimezone(beijing_tz)
-
-    # Define the date window: [request_dt - 4 days, request_dt + 3 days]
-    min_dt = request_dt_beijing - timedelta(days=5)
-    max_dt = request_dt_beijing + timedelta(days=5)
+    request_dt_beijing = get_request_beijing_datetime(raw_space_env_data)
+    min_dt = request_dt_beijing - timedelta(days=4)
+    max_dt = request_dt_beijing + timedelta(days=3)
 
     #################################################################
     # F107
@@ -280,6 +294,27 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     for x_val, y_val in zip(pred_dates2, pred_vals2):
         ax.text(x_val, y_val + 1, f"{y_val:.0f}", color='blue', ha='center')
 
+    # Draw a vertical line at request_dt_beijing
+    ax.axvline(
+        x=request_dt_beijing,
+        color='black',
+        linestyle='--',
+        linewidth=1,
+        alpha=0.8
+    )
+
+    # Optionally label that vertical line near the top:
+    y_min, y_max = ax.get_ylim()
+    ax.text(
+        request_dt_beijing,
+        y_max * 0.95,
+        "当前时间",
+        color='black',
+        rotation=90,
+        ha='right',
+        va='bottom'
+    )
+
     ax.set_title("F10.7 Index")
     ax.set_xlabel("日期")
     ax.set_ylabel("F10.7")
@@ -339,6 +374,27 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     ax2.plot(pred_dates2_ap, pred_vals2_ap, color='blue', marker='o', markerfacecolor='white', markersize=5, label='预测')
     for x_val, y_val in zip(pred_dates2_ap, pred_vals2_ap):
         ax2.text(x_val, y_val + 1, f"{y_val:.0f}", color='blue', ha='center')
+
+    # Draw a vertical line at request_dt_beijing
+    ax2.axvline(
+        x=request_dt_beijing,
+        color='black',
+        linestyle='--',
+        linewidth=1,
+        alpha=0.8
+    )
+
+    # Optionally label that vertical line near the top:
+    y_min, y_max = ax2.get_ylim()
+    ax2.text(
+        request_dt_beijing,
+        y_max * 0.5,
+        "当前时间",
+        color='black',
+        rotation=90,
+        ha='right',
+        va='bottom'
+    )
 
     ax2.set_title("Ap Index")
     ax2.set_xlabel("日期")
@@ -431,7 +487,28 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
         # Place label above the top
         ax3.text(x_center, height + 0.2, f"{height:.0f}", ha='center', va='bottom')
 
-    ax3.set_title("最近12小时观测Kp值")
+    # Draw a vertical line at request_dt_beijing
+    ax3.axvline(
+        x=request_dt_beijing,
+        color='black',
+        linestyle='--',
+        linewidth=1,
+        alpha=0.8
+    )
+
+    # Optionally label that vertical line near the top:
+    y_min, y_max = ax3.get_ylim()
+    ax3.text(
+        request_dt_beijing,
+        y_max * 0.5,
+        "当前时间",
+        color='black',
+        rotation=90,
+        ha='right',
+        va='bottom'
+    )
+
+    ax3.set_title("最近观测Kp值")
     ax3.set_xlabel("日期")
     ax3.set_ylabel("Kp指数")
     ax3.set_ylim(0, 9)
@@ -454,10 +531,11 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
 
     kp_img = Image(buf_kp, width=400, height=220)
     story.append(kp_img)
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 10))
 
     # ============= End of new plots ==================
 
+    # --- 9) Topic2
     # 新增在轨卫星轨道变化情况
 
     story.append(Paragraph(
@@ -496,6 +574,8 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     story.append(table)
     story.append(Spacer(1, 40))
 
+    # --- 10) Notes and others
+
     # 数据来源和标准
     story.append(Paragraph("<b>数据来源和标准:</b>", chinese_style))
     story.append(Spacer(1, 10))
@@ -529,6 +609,14 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     • 定轨误差为星历历元时间时刻或实际GNSS数据第一点时间时刻理论与实际距离差值。其反映了星历的误差。
     """
     story.append(Paragraph(remarks, chinese_style))
+    story.append(Spacer(1, 20))
+
+    # --- 11)Report Generation Time (Centered)
+    centered_style = ParagraphStyle(name='centered', fontName='SimSun', fontSize=14, textColor=colors.red)
+    story.append(Paragraph(
+        f"报告生成时间: {report_data['eventTimeStr']}",
+        centered_style))
+    story.append(Spacer(1, 5))
 
     # Build PDF with footer on each page
     doc.build(story, onLaterPages=footer)
