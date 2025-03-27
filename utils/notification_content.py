@@ -7,7 +7,7 @@ from utils.space_weather_forecast import space_weather_data_raw
 from utils.od_utils import satellite_codes
 import requests
 import os
-from utils.sei_report_generate import create_space_weather_report
+from utils.sei_report_generate import create_space_weather_report, generate_summary_table_png
 
 
 def generate_sei_and_orbit_content(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_list,
@@ -259,6 +259,14 @@ def generate_sei_and_orbit_content(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
     else:
         timeofday = "日报"
 
+    # Determine the time of day in one word
+    if 0 <= hour < 12:
+        timeofdayoneword = "早上"
+    elif 12 <= hour < 24:
+        timeofdayoneword = "晚上"
+    else:
+        timeofdayoneword = ""
+
     # Prepare the payload
     payload = {
         "space_env_data": {
@@ -278,7 +286,8 @@ def generate_sei_and_orbit_content(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
         },
         "satellite_data": extracted_satellite_data,
         "eventTimeStr": str(time_report_str),
-        "timeofday": timeofday
+        "timeofday": timeofday,
+        "timeofdayoneword": timeofdayoneword
     }
     # print(json.dumps(payload))
 
@@ -644,9 +653,9 @@ def space_weather_report_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
                 "F107_tomorrow": F107_tomorrow,
                 "Ap_today": Ap_today,
                 "Ap_tomorrow": Ap_tomorrow,
-                "full_F107": space_env_data["F107"],     # separate observed/predicted
+                "full_F107": space_env_data["F107"],  # separate observed/predicted
                 "full_ApIndex": space_env_data["ApIndex"],
-                "Kp_values": space_env_data["KpIndex"]   # entire Kp list
+                "Kp_values": space_env_data["KpIndex"]  # entire Kp list
             },
             "timestamp": current_timestamp_sec
         }
@@ -656,7 +665,6 @@ def space_weather_report_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
     except Exception as e:
         print(f"Error in space_weather_report_raw: {e}")
         return {"Error": "Failed to generate raw space environment data"}
-
 
 
 def space_weather_info_only(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
@@ -963,53 +971,88 @@ def space_weather_orbit_pdf_report(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
     return f"Report successfully generated: {filename}"
 
 
-def space_weather_orbit_pdf_report_alicoud(tf1, tf2,
-                                           get_F10point7, get_ApIndex, get_KpIndex,
-                                           satID_list,
-                                           mean_6element_url, get_calc_result_url,
-                                           post_token_url,
-                                           post_token_user_name,
-                                           post_token_password,
-                                           gnss_config,
-                                           OSS2
-                                           ):
+def space_weather_orbit_pdf_report_alicoud(
+        tf1, tf2,
+        get_F10point7, get_ApIndex, get_KpIndex,
+        satID_list,
+        mean_6element_url, get_calc_result_url,
+        post_token_url,
+        post_token_user_name,
+        post_token_password,
+        gnss_config,
+        OSS2,
+        notification_url
+    ):
     """
-    Generates a PDF report, uploads it to Alibaba Cloud OSS using the given OSS2 object,
-    and returns the signed URL.
+    1) Generates a PDF report, uploads it to Alibaba Cloud OSS
+    2) Also generates a summary_table PNG, uploads it
+    3) Sends a DingTalk notification with both links
     """
-    # 1) Generate your normal orbit/space environment data
+    # 1) Generate normal orbit data
     report_data = generate_sei_and_orbit_content(
         tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex, satID_list,
         mean_6element_url, get_calc_result_url,
         post_token_url, post_token_user_name, post_token_password,
         gnss_config
     )
-
     raw_space_env_data = space_weather_report_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex)
 
-    # 2) Create a local PDF file
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, '..'))
     output_folder = os.path.join(project_root, "data")
     os.makedirs(output_folder, exist_ok=True)
 
-    # Unique filename
+    # 2) Create local PDF
     local_filename = f"space_weather_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     local_path = os.path.join(output_folder, local_filename)
-
-    # Generate the report locally
     create_space_weather_report(local_path, report_data, raw_space_env_data)
 
-    # 3) Upload to OSS
-    oss_key = f"pdf-reports/{local_filename}"
-    OSS2.upload_file(oss_key, local_path)
+    # 3) Upload the PDF to OSS
+    oss_key_pdf = f"pdf-reports/{local_filename}"
+    OSS2.upload_file(oss_key_pdf, local_path)
+    report_url = OSS2.make_url(oss_key_pdf)
 
-    # 4) Get the signed URL (optional)
-    report_url = OSS2.make_url(oss_key)
-
-    # 5) Delete the local file if you don't need it anymore
+    # Optionally remove local PDF
     os.remove(local_path)
 
-    # 6) Return success message with the signed URL
-    return f"Report successfully uploaded {local_filename} to OSS: {report_url}"
+    # 4) Generate summary table PNG
+    # We'll re-use 'report_data' or pass only what the table needs
+    summary_png_path = generate_summary_table_png(report_data, output_folder)
+    # e.g. summary_png_path = /.../data/summary_table_xxx.png
+
+    # 5) Upload table PNG to OSS
+    table_png_name = os.path.basename(summary_png_path)  # summary_table_xxx.png
+    oss_key_png = f"table-snapshots/{table_png_name}"
+    OSS2.upload_file(oss_key_png, summary_png_path)
+    snapshot_url = OSS2.make_url(oss_key_png)
+
+    # Remove local PNG
+    os.remove(summary_png_path)
+
+    # 6) Prepare and send DingTalk payload
+    payload = {
+        "System": "odpa3",
+        "NoticeCode": "daily_orbit_reporter_pdf",
+        "type": "action_card",
+        "Param": {
+            "reportlink": report_url,
+            "snapshotlink": snapshot_url,
+            # Additional fields from your example:
+            "timeofdayoneword": report_data.get('timeofdayoneword', ''),
+            "timeofdayfeed": report_data.get('timeofday', '')
+        }
+    }
+
+    try:
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(notification_url, json=payload, headers=headers, timeout=300)
+        if response.status_code == 200:
+            print("DingTalk notification posted successfully.")
+        else:
+            print(f"Failed to post notification! HTTP {response.status_code}, Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending DingTalk notification: {e}")
+
+    return f"PDF created with snapshot:{report_url}"
+
 

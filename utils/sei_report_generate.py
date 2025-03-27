@@ -1,4 +1,6 @@
 import os, io
+import uuid
+import shutil
 import matplotlib
 
 matplotlib.use('Agg')  # Required in headless environments
@@ -15,6 +17,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus.flowables import HRFlowable
 from reportlab.lib import colors
+from pdf2image import convert_from_path
+
 import time, json
 import pytz
 from datetime import datetime, timedelta
@@ -29,6 +33,7 @@ chinese_style = ParagraphStyle(
     alignment=1,  # center alignment
 )
 
+# all helper functions except for the last one
 
 def get_request_beijing_datetime(raw_space_env_data):
 
@@ -134,6 +139,7 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
         fontSize=24,
         leading=22,
         alignment=1,
+        textColor=colors.red
     )
 
     chinese_paragraph_title_style = ParagraphStyle(
@@ -164,7 +170,7 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
     start_time = get_request_beijing_datetime_minus12h(raw_space_env_data)
     end_time = get_request_beijing_datetime(raw_space_env_data)
 
-    centered_style = ParagraphStyle(name='centered', fontName='SimSun', fontSize=14, alignment=1, textColor=colors.red)
+    centered_style = ParagraphStyle(name='centered', fontName='SimSun', fontSize=14, alignment=1)
     story.append(
         Paragraph(
             f"报告分析时段: {start_time.strftime('%Y-%m-%d %H:%M')} 至 {end_time.strftime('%Y-%m-%d %H:%M')}",
@@ -620,5 +626,62 @@ def create_space_weather_report(filename, report_data, raw_space_env_data):
 
     # Build PDF with footer on each page
     doc.build(story, onLaterPages=footer)
+
+
+# snapshot helper function
+def generate_summary_table_png(report_data, output_folder):
+    """
+    1) Builds a minimal PDF with the space weather summary table only.
+    2) Converts that PDF to PNG using pdf2image.
+    3) Returns the path to the PNG.
+    """
+    # Prepare paths
+    os.makedirs(output_folder, exist_ok=True)
+    unique_id = str(uuid.uuid4())[:8]
+    pdf_path = os.path.join(output_folder, f"summary_table_{unique_id}.pdf")
+    png_path = os.path.join(output_folder, f"summary_table_{unique_id}.png")
+
+    # 1) Build minimal PDF
+    doc = SimpleDocTemplate(pdf_path, pagesize=(8*inch, 4*inch),  # small page
+                            rightMargin=1, leftMargin=1,
+                            topMargin=5, bottomMargin=1)
+
+
+    story = []
+
+    # Your "get_solar_status", "get_geomagnetic_status" presumably return something you can place in Table
+    solar_today = get_solar_status(report_data['space_env_data'].get('F107_today'))
+    solar_tomorrow = get_solar_status(report_data['space_env_data'].get('F107_tomorrow'))
+    geo_today = get_geomagnetic_status(report_data['space_env_data'].get('Ap_today'))
+    geo_tomorrow = get_geomagnetic_status(report_data['space_env_data'].get('Ap_tomorrow'))
+
+    summary_data = [
+        ["", "太阳活动", "地磁活动"],
+        ["过去12小时总结", solar_today, geo_today],
+        ["未来12小时预测", solar_tomorrow, geo_tomorrow]
+    ]
+    summary_table = Table(summary_data, colWidths=[150, 180, 180], rowHeights=80)
+    summary_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'SimSun'),
+        ('FONTSIZE', (0, 0), (-1, -1), 18),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+    ]))
+
+    story.append(summary_table)
+    doc.build(story)
+
+    # 2) Convert the minimal PDF to PNG
+    # pdf2image.convert_from_path returns a list of PIL Images
+    pages = convert_from_path(pdf_path, dpi=400)  # increase dpi if you need sharper images
+    if pages:
+        pages[0].save(png_path, 'PNG')
+
+    # Cleanup the minimal PDF if you don't want to keep it
+    os.remove(pdf_path)
+
+    return png_path
 
 # create_space_weather_report("space_weather_report_fixed.pdf", report_data)

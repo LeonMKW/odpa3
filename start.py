@@ -227,7 +227,9 @@ def sei_orbit_pdfreport_alicloud():
         post_token_user_name=post_token_user_name,
         post_token_password=post_token_password,
         gnss_config=gnss_config,
-        OSS2=OSS2)
+        OSS2=OSS2,
+        notification_url=notification_url
+    )
 
     return jsonify({"message": response}), 200
 
