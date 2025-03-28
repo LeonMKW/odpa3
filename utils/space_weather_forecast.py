@@ -229,3 +229,175 @@ def space_weather_forecast(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
     except Exception as e:
         print(f"Critical failure in space_weather_forecast: {str(e)}")
         return "sepc down"
+
+
+# def space_weather_data_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
+#
+#     # Convert tf1 and tf2 to YYYYMMDD format
+#     start_date = datetime.utcfromtimestamp(int(tf1) / 1000).strftime('%Y%m%d')
+#     end_date = datetime.utcfromtimestamp(int(tf2) / 1000).strftime('%Y%m%d')
+#
+#     adjusted_predict_start_timestamp = (int(tf1) / 1000)
+#     start_date_predict = datetime.utcfromtimestamp(adjusted_predict_start_timestamp).strftime('%Y%m%d')
+#
+#     adjusted_real_start_timestamp = (int(tf1) / 1000) + (16 * 86400)
+#     start_date_real = datetime.utcfromtimestamp(adjusted_real_start_timestamp).strftime('%Y%m%d')
+#
+#     # Construct API URLs
+#     F107url_getpredict = f"{get_F10point7}?starttime={start_date_predict}&sid=0.6115449414235199"
+#     F107url_getyesterdayreal = f"{get_F10point7}?starttime={start_date_real}&sid=0.6115449414235199"
+#     Apurl_getpredict = f"{get_ApIndex}?starttime={start_date_predict}&sid=0.28182909407741774"
+#     Apurl_getyesterdayreal = f"{get_ApIndex}?starttime={start_date_real}&sid=0.28182909407741774"
+#     Kpurl = f"{get_KpIndex}?starttime={start_date}&endtime={end_date}&sid=0.575286767183163"
+#     print(F107url_getpredict)
+#     print(F107url_getyesterdayreal)
+#     print(Apurl_getpredict)
+#     print(Apurl_getyesterdayreal)
+#     print(Kpurl)
+#
+#     try:
+#         # Fetch real and predicted F10.7 values
+#         F107_real = fetch_f107_index(F107url_getyesterdayreal)
+#         F107_predict = fetch_f107_index(F107url_getpredict)
+#
+#         # Extract and merge F10.7 values
+#         F107_xaxis_real = json.loads(F107_real["xaxis"])
+#         F107_real_values = json.loads(F107_real["realvalue"])
+#         F107_xaxis_pred = json.loads(F107_predict["xaxis"])
+#         F107_predicted_values = json.loads(F107_predict["futurevalue"])
+#
+#         F107_merged = []
+#         for i in range(len(F107_xaxis_real)):
+#             date = F107_xaxis_real[i]
+#             real_value = F107_real_values[i] if F107_real_values[i] != "null" else None
+#
+#             yesterday_index = i - 1 if i > 0 else None
+#             yesterday_real = (
+#                 F107_real_values[yesterday_index] if yesterday_index is not None and F107_real_values[yesterday_index] != "null"
+#                 else None
+#             )
+#
+#             try:
+#                 pred_index = F107_xaxis_pred.index(date)
+#                 predicted_value = F107_predicted_values[pred_index] if F107_predicted_values[pred_index] != "null" else None
+#             except ValueError:
+#                 predicted_value = None
+#
+#             merged_value = real_value if real_value is not None else yesterday_real if yesterday_real is not None else predicted_value
+#             F107_merged.append(merged_value)
+#
+#         F10point7_value = {
+#             "xaxis": json.dumps(F107_xaxis_real),
+#             "value": json.dumps(F107_merged)
+#         }
+#
+#         # Fetch real and predicted ApIndex values
+#         Ap_real = fetch_ap_index(Apurl_getyesterdayreal)
+#         Ap_predict = fetch_ap_index(Apurl_getpredict)
+#
+#         # Merge ApIndex values
+#         Ap_xaxis_real = json.loads(Ap_real["xaxis"])
+#         Ap_real_values = json.loads(Ap_real["realvalue"])
+#         Ap_predicted_values = json.loads(Ap_predict["futurevalue"])
+#
+#         Ap_merged = []
+#         for i, date in enumerate(Ap_xaxis_real):
+#             real_value = Ap_real_values[i] if Ap_real_values[i] != "null" else None
+#             pred_value = Ap_predicted_values[i] if i < len(Ap_predicted_values) and Ap_predicted_values[i] != "null" else None
+#             merged_value = real_value if real_value is not None else pred_value
+#             Ap_merged.append(merged_value)
+#
+#         ApIndex_value = {
+#             "xaxis": json.dumps(Ap_xaxis_real),
+#             "value": json.dumps(Ap_merged)
+#         }
+#
+#         # Fetch Kp values
+#         Kp_value = fetch_kp_index(Kpurl)
+#         Kp_observe = json.loads(Kp_value["observe"])
+#
+#         # Prepare complete Kp data
+#         Kp_complete = [{"time": entry[1], "value": entry[2]} for entry in Kp_observe]
+#
+#         return {
+#             "F107": F10point7_value,
+#             "ApIndex": ApIndex_value,
+#             "KpIndex": Kp_complete
+#         }
+#
+#     except Exception as e:
+#         print(f"Critical failure in space_weather_forecast: {str(e)}")
+#         return "sepc down"
+
+def space_weather_data_raw(tf1, tf2, get_F10point7, get_ApIndex, get_KpIndex):
+    """
+    Returns separate observed (real) and predicted data for F10.7 and Ap, plus full Kp list.
+    No merging logic -- the user decides how to combine or pivot them.
+    """
+    try:
+        # Convert tf1 and tf2 to YYYYMMDD format
+        start_date = datetime.utcfromtimestamp(int(tf1) / 1000).strftime('%Y%m%d')
+        end_date = datetime.utcfromtimestamp(int(tf2) / 1000).strftime('%Y%m%d')
+
+        # Adjust start_date for prediction (-2 days) and real values (+16 days)
+        adjusted_predict_start_timestamp = (int(tf1) / 1000) - (0 * 86400)  # -2 days for prediction
+        start_date_predict = datetime.utcfromtimestamp(adjusted_predict_start_timestamp).strftime('%Y%m%d')
+
+        adjusted_real_start_timestamp = (int(tf1) / 1000) + (16 * 86400)  # +16 days for real values
+        start_date_real = datetime.utcfromtimestamp(adjusted_real_start_timestamp).strftime('%Y%m%d')
+
+        # Construct API URLs
+        F107url_getpredict = f"{get_F10point7}?starttime={start_date_predict}&sid=0.6115449414235199"
+        F107url_getyesterdayreal = f"{get_F10point7}?starttime={start_date_real}&sid=0.6115449414235199"
+        Apurl_getpredict = f"{get_ApIndex}?starttime={start_date_predict}&sid=0.28182909407741774"
+        Apurl_getyesterdayreal = f"{get_ApIndex}?starttime={start_date_real}&sid=0.28182909407741774"
+        Kpurl = f"{get_KpIndex}?starttime={start_date}&endtime={end_date}&sid=0.575286767183163"
+
+        # 1) F10.7 Observed (Real)
+        F107_obs = fetch_f107_index(F107url_getyesterdayreal)
+        # Observed = { "xaxis": str, "realvalue": str, "futurevalue": str } => We'll store realvalue in 'observed'
+        # Example: { "xaxis":"[...]", "realvalue":"[...]", "futurevalue":"[...]" }
+
+        # 2) F10.7 Predicted
+        F107_pred = fetch_f107_index(F107url_getpredict)
+        # We'll store 'futurevalue' in 'predicted'
+
+        # 3) Ap Observed (Real)
+        Ap_obs = fetch_ap_index(Apurl_getyesterdayreal)
+
+        # 4) Ap Predicted
+        Ap_pred = fetch_ap_index(Apurl_getpredict)
+
+        # 5) Kp All
+        Kp_value = fetch_kp_index(Kpurl)
+        Kp_observe = json.loads(Kp_value["observe"])  # e.g. [ [...], [...], ... ]
+        # Convert to list of dict
+        Kp_list = [{"time": entry[1], "value": entry[2]} for entry in Kp_observe]
+
+        return {
+            "F107": {
+                "observed": {
+                    "xaxis": F107_obs["xaxis"],
+                    "value": F107_obs["realvalue"]  # or "futurevalue" as "maybe partial observed"
+                },
+                "predicted": {
+                    "xaxis": F107_pred["xaxis"],
+                    "value": F107_pred["futurevalue"]
+                }
+            },
+            "ApIndex": {
+                "observed": {
+                    "xaxis": Ap_obs["xaxis"],
+                    "value": Ap_obs["realvalue"]
+                },
+                "predicted": {
+                    "xaxis": Ap_pred["xaxis"],
+                    "value": Ap_pred["futurevalue"]
+                }
+            },
+            "KpIndex": Kp_list
+        }
+
+    except Exception as e:
+        print(f"Error in space_weather_data_raw: {e}")
+        return "sepc down"
