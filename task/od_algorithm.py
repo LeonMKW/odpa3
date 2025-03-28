@@ -74,7 +74,7 @@ def orbit_precision_calculation_step2_1(post_token_url,
     # Define headers
 
     headers = {
-        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6OTE4LCJzdWIiOiI5IiwiYXVkIjoiOCIsImV4cCI6MTc0Mjg4NzY1NiwiaWF0IjoxNzM3NzAzNjU2fQ.Blpolskkz8yOzEqPCOYDj7k4LiBMiMAI_oz2PE00_FQypN7-H37Ii976446jvuTdXpFIJbgEpACiqlhSWo40Yw',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTE3Mywic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NDgwNzUwMDksImlhdCI6MTc0Mjg5MTAwOX0.HXNnCaWVIsF9D1hxlwgqnOy03OHxPed09G12qiZXug2oYKwvyv6ADTVTAEd2e1i1-qtve179oomF8CEWsayQag',
         'x-web-token': token,
         'Content-Type': 'application/json'
     }

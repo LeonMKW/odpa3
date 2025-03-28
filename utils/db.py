@@ -190,8 +190,9 @@ class OSS2:
 
         logging.info(f"{filename} successfully uploaded as object {key} to bucket odprecision")
 
-    def make_url(self, image_name):
+    def make_url(self, filename):
         client = self.get_oss_client()
-        imgurl = client.sign_url('GET', image_name, 2592000000)
-        # print(imgurl)
-        return imgurl
+        filenameurl = client.sign_url('GET', filename, 2592000000)
+        # print(filenameurl)
+        return filenameurl
+
