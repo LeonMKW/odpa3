@@ -18,6 +18,8 @@ from utils.notification_content import space_weather_report_content, space_weath
     space_weather_info_with_summary, space_weather_orbit_pdf_report, space_weather_report_raw, \
     space_weather_orbit_pdf_report_alicoud
 
+from utils.inner_stomsphere_weather_forecast import fetch_antennas_lat_lon, get_weather_forecast_data
+
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -111,6 +113,16 @@ get_calc_result_url = app.config['GET_CALC_RESULT']
 
 # push notification
 notification_url = app.config['NOTIFICATION_URL']
+
+# weather forecast data
+weather_forecast_url = app.config['WEATHER_FORECAST_URL']
+weather_forecast_key = app.config['WEATHER__FORECAST_KEY']
+
+# gateway station code
+gateway_station_code_url = app.config['GATEWAY_STATION_CODE_URL']
+
+# gateway station location
+gateway_station_location_url = app.config['GATEWAY_STATION_LOCATION_URL']
 
 app = Flask(__name__)
 CORS(app)
@@ -285,84 +297,46 @@ def space_enviroment_data_raw():
     return jsonify({"message": response}), 200
 
 
-# OSS2 = OSS2,
-# note_url = note_url,
+# gettting location
+@app.route('/gateway-location', methods=['POST'])
+def gateway_location():
+    data = request.json
+    if not data or "keyword" not in data:
+        return jsonify({"Error": "Please provide 'keyword'"}), 400
 
-# # excute collision avoidance PA//自动计算系列
-# @app.route('/capa', methods=['POST'])
-# def capa():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = collision_avoidance_precision_analysis_auto_task(metedataservice_url=mete_data_service,
-#                                                                 orbitserviceurl=orbit_service,
-#                                                                 _influxdb=influxdb_input, client=client_input,
-#                                                                 mariadb=mariadbsetup,
-#                                                                 note_url=note_url,
-#                                                                 orbit_prop_url=orbit_prop_url,
-#                                                                 OSS2=OSS2,
-#                                                                 satID_list=data['satIDs']
-#                                                                 )
-#     return jsonify(response), 200
+    response = fetch_antennas_lat_lon(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        keyword=data['keyword']
+    )
 
-# @app.route('/obh', methods=['POST'])
-# def all_obh():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = get_obh(
-#         post_token_url,
-#         post_token_user_name,
-#         post_token_password,
-#         mete_data_service=mete_data_service,
-#         influxdb_orbdata=influxdb_orbdata,
-#         client_orbdata=client_orbdata,
-#         satID=data['satID'],  # Accept multiple satellite IDs
-#         start=data['start'],
-#         end=data['end']
-#     )
-#
-#     return Response(response=response,
-#                     status=200,
-#                     mimetype='application/json')
+    return jsonify({"message": response}), 200
 
 
-# try
-# @app.route('/try', methods=['POST'])
-# def od_temp():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = propagating_2nd_predictive_ephemeris(
-#         post_token_url,
-#         post_token_user_name,
-#         post_token_password,
-#         mete_data_service=mete_data_service,
-#         post_satellite_report_search_url=post_satellite_report_search,
-#         get_satellite_file_download_url=get_satellite_file_download,
-#         satelliteId=data['satelliteId'],
-#         reportTypes=data['reportTypes'],
-#         beginTime=data['beginTime'],
-#         endTime=data['endTime'],
-#         states=data['states'],
-#         _influxdb=influxdb_input,
-#         client=client_input,
-#         orbit_prop_url=orbit_prop_url,
-#         propagation_hours=data['propagation_hours'],
-#     )
-#
-#     return Response(response=response,
-#                     status=200,
-#                     mimetype='application/json')
+# 天气信息获取
+@app.route('/weather-forecast-data', methods=['POST'])
+def weather_forecast_data():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = get_weather_forecast_data(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name']
+    )
+
+    return jsonify({"message": response}), 200
 
 
 @app.route('/index', methods=['GET'])
