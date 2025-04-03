@@ -156,35 +156,193 @@ def fetch_antennas_lat_lon(post_token_url, post_token_user_name, post_token_pass
     return final_results
 
 
-def filter_hours_fields(data):
-    allowed_fields = {
-        "cloudcover", "conditions", "datetime", "datetimeEpoch", "humidity", "icon",
-        "precip", "precipprob", "preciptype", "severerisk", "temp", "uvindex",
-        "visibility", "winddir", "windgust", "windspeed", "source"
+# scale helper functions
+def compute_beaufort_scale(windspeed_kmh):
+    """
+    Convert speed in km/h to Beaufort scale (0..12).
+    Basic reference: https://en.wikipedia.org/wiki/Beaufort_scale
+    Example thresholds in km/h:
+      0-1  => 0
+      1-5  => 1
+      6-11 => 2
+      ...
+      ~118+ => 12
+    """
+    speed = float(windspeed_kmh)
+
+    if speed < 1:
+        return 0
+    elif speed <= 5:
+        return 1
+    elif speed <= 11:
+        return 2
+    elif speed <= 19:
+        return 3
+    elif speed <= 28:
+        return 4
+    elif speed <= 38:
+        return 5
+    elif speed <= 49:
+        return 6
+    elif speed <= 61:
+        return 7
+    elif speed <= 74:
+        return 8
+    elif speed <= 88:
+        return 9
+    elif speed <= 102:
+        return 10
+    elif speed <= 117:
+        return 11
+    else:
+        return 12
+
+
+def compute_beaufort_scale_chinese(b_scale):
+    """
+    Maps the numeric B_wind_scale (0..12) to the Chinese name.
+    <1, 无风,1软风,2轻风,3微风,4和风,5劲风,6强风,7疾风,8大风,9烈风,10狂风,11暴风,12飓风
+    """
+    mapping = {
+        0: "无风",
+        1: "软风",
+        2: "轻风",
+        3: "微风",
+        4: "和风",
+        5: "劲风",
+        6: "强风",
+        7: "疾风",
+        8: "大风",
+        9: "烈风",
+        10: "狂风",
+        11: "暴风",
+        12: "飓风"
+    }
+    return mapping.get(b_scale, "未知")
+
+
+def compute_precip_scale(precip_mm):
+    """
+    Simple example of a 'Chinese' precipitation scale:
+    e.g. 0 => '无雨', 0-0.1 => '微量', 0.1-10 => '小雨', 10-25 => '中雨', etc.
+    Adjust to your needs.
+    """
+    p = float(precip_mm)
+    if p <= 0:
+        return "无雨"
+    elif p < 0.1:
+        return "微量"
+    elif p < 10:
+        return "小雨"
+    elif p < 25:
+        return "中雨"
+    elif p < 50:
+        return "大雨"
+    elif p < 100:
+        return "暴雨"
+    else:
+        return "特大暴雨"
+
+
+# transform weather data functions
+def transform_weather_data(raw_weather):
+    """
+    Takes the dictionary structure from get_weather_forecast_data:
+
+    {
+      "GSGW0101": {
+        "alerts": [],
+        "antenna_name": ...,
+        "currentConditions": {...},
+        "days": [ { "hours": [ ... ] }, ... ],
+        "latitude": ...,
+        "longitude": ...,
+        "timezone": ...
+      },
+      "GSGW1803": {...},
+      ...
     }
 
-    days = data.get("days", [])
-    for day in days:
-        hours = day.get("hours", [])
-        filtered_hours = []
-        for hour in hours:
-            # Pick out only allowed fields
-            filtered_hour = {
-                key: hour[key]
-                for key in allowed_fields
-                if key in hour
-            }
-            filtered_hours.append(filtered_hour)
-        # Replace the original hours with the filtered hours
-        day["hours"] = filtered_hours
-    return data
+    Returns a new dictionary with changes:
+    1) top-level => 'station_name'
+    2) add 'B_wind_scale' from windspeed
+    3) add 'precipitation_scale' from precip
+    4) add 'forecast_alert'
+    """
+
+    # We'll build a new dictionary. Potentially multiple stations
+    # => we can store them in a list or keep them as dict.
+    # If your front-end expects a single station, handle accordingly.
+    transformed = {}
+
+    for station_code, station_data in raw_weather.items():
+        # Build a new top-level structure
+        new_station_dict = {}
+
+        # 1) rename station_code -> "station_name"
+        # we'll put "station_name": station_code in the new dictionary
+        new_station_dict["station_name"] = station_code
+
+        # copy over existing top-level fields you want to keep
+        new_station_dict["alerts"] = station_data.get("alerts", [])
+        new_station_dict["antenna_name"] = station_data.get("antenna_name")
+        new_station_dict["latitude"] = station_data.get("latitude")
+        new_station_dict["longitude"] = station_data.get("longitude")
+        new_station_dict["timezone"] = station_data.get("timezone")
+
+        # 4) add "forecast_alert" as a placeholder
+        new_station_dict["forecast_alert"] = "TODO: fill logic here"
+
+        # For "currentConditions", we can add B_wind_scale and precipitation_scale
+        cc = station_data.get("currentConditions", {})
+        # if "windspeed" is in km/h
+        windspeed = cc.get("windspeed")  # can be float or None
+        if windspeed is not None:
+            cc["B_wind_scale"] = compute_beaufort_scale(windspeed)
+
+        precip = cc.get("precip")  # mm
+        if precip is not None:
+            cc["precipitation_scale"] = compute_precip_scale(precip)
+
+        new_station_dict["currentConditions"] = cc
+
+        # For days -> hours
+        new_days = []
+        for d in station_data.get("days", []):
+            # We'll copy day except for hours (transform hours)
+            day_copy = dict(d)
+            old_hours = day_copy.pop("hours", [])
+            new_hours = []
+            for hour in old_hours:
+                # Insert B_wind_scale
+                ws = hour.get("windspeed")
+                if ws is not None:
+                    b_scale = compute_beaufort_scale(ws)
+                    hour["B_wind_scale"] = b_scale
+                    hour["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(b_scale)
+
+                # Insert precipitation_scale
+                pr = hour.get("precip")
+                if pr is not None:
+                    hour["precipitation_scale"] = compute_precip_scale(pr)
+
+                new_hours.append(hour)
+
+            day_copy["hours"] = new_hours
+            new_days.append(day_copy)
+
+        new_station_dict["days"] = new_days
+
+        # Insert into the final dict
+        transformed[station_code] = new_station_dict
+
+    return transformed
 
 
 def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_password,
                               gateway_station_code_url, gateway_station_location_url,
                               tf1, tf2, gateway_station_name,
                               weather_forecast_url, weather_forecast_key):
-
     # Handle default timestamps
     current_time_sec = int(time.time())
     if not tf1:
@@ -263,6 +421,8 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                 "alerts": data.get("alerts"),
                 "currentConditions": data.get("currentConditions")
             }
+
+            transform_weather_data(weather_results)
 
         except requests.RequestException as e:
             weather_results[antenna_code] = {"Error": f"Failed to fetch weather: {e}"}
