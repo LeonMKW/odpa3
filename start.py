@@ -340,24 +340,24 @@ def weather_forecast_data():
 
 
 # 天气预报报告推送
-# @app.route('/weather-forecast-report', methods=['POST'])
-# def weather_forecast_report():
-#     data = request.json
-#     if not data or "start" not in data or "end" not in data:
-#         return jsonify({"Error": "Please provide 'start', 'end'"}), 400
-#
-#     response = get_weather_forecast_report(
-#         post_token_url=post_token_url,
-#         post_token_user_name=post_token_user_name,
-#         post_token_password=post_token_password,
-#         gateway_station_code_url=gateway_station_code_url,
-#         gateway_station_location_url=gateway_station_location_url,
-#         weather_forecast_url=weather_forecast_url,
-#         weather_forecast_key=weather_forecast_key,
-#         tf1=data['start'],
-#         tf2=data['end'],
-#         gateway_station_name=data['gateway_station_name']
-#     )
+@app.route('/weather-forecast-report', methods=['POST'])
+def weather_forecast_report():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = get_weather_forecast_report(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name']
+    )
 
     return jsonify({"message": response}), 200
 
