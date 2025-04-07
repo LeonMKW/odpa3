@@ -43,6 +43,7 @@ styles = {
         "title",
         fontName="SimSun",
         fontSize=16,
+        textColor=colors.red,
         leading=20,
         alignment=1,  # Centered
     ),
@@ -101,7 +102,11 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
         wind_alerts = alerts.get("wind", [])
         rain_alerts = alerts.get("rain", [])
 
-        # If no alerts at all:
+        # The lists for alerts that specifically fall within tasks:
+        wind_during_task = st_data.get("wind_during_task", [])
+        rain_during_task = st_data.get("rain_during_task", [])
+
+        # If no "standard" alerts:
         if not wind_alerts and not rain_alerts:
             story.append(Paragraph("<b>预警情况：</b>无预警", styles["default"]))
         else:
@@ -120,8 +125,27 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
                     story.append(Paragraph(f"• {ralert}", styles["default"]))
                 story.append(Spacer(1, 6))
 
-        story.append(Spacer(1, 12))
+        # Now show *during-task* wind/rain alerts
+        if wind_during_task or rain_during_task:
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("<b>在任务时间内的天气预警:</b>", styles["default"]))
 
+            if wind_during_task:
+                story.append(Paragraph("• <b>任务期间风力预警</b>", styles["default"]))
+                for witem in wind_during_task:
+                    # witem is a dict like { "time": "2025-04-07 03:00:00", "message": "6-7级风力预警" }
+                    w_time = witem["time"]
+                    w_msg = witem["message"]
+                    story.append(Paragraph(f"- {w_time} => {w_msg}", styles["default"]))
+
+            if rain_during_task:
+                story.append(Paragraph("• <b>任务期间降水预警</b>", styles["default"]))
+                for ritem in rain_during_task:
+                    r_time = ritem["time"]
+                    r_msg = ritem["message"]
+                    story.append(Paragraph(f"- {r_time} => {r_msg}", styles["default"]))
+
+        story.append(Spacer(1, 12))
         # Forecast table per day
         for day in st_data.get("days", []):
             story.append(Paragraph(f"<b>日期: {day['datetime']}</b>", styles["default"]))

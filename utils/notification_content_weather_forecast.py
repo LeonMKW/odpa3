@@ -19,6 +19,7 @@ def generate_weather_forecast_report(
     gateway_station_location_url,
     weather_forecast_url,
     weather_forecast_key,
+    gateway_tasks_url,
     tf1,
     tf2,
     gateway_station_name
@@ -39,6 +40,7 @@ def generate_weather_forecast_report(
         gateway_station_location_url=gateway_station_location_url,
         weather_forecast_url=weather_forecast_url,
         weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
         tf1=tf1,
         tf2=tf2,
         gateway_station_name=gateway_station_name

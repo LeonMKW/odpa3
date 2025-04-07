@@ -80,8 +80,7 @@ OSS2 = db.OSS2(app.config['OSS2_ENDPOINT'],
                app.config['OSS2_SECRET'])
 
 # 查信关站任务
-# gateway_url = app.config['APPLICATION_TASK']
-# gateway_auth = app.config['APPLICATION_AUTHORIZATION']
+gateway_tasks_url = app.config['APPLICATION_TASK']
 
 # 航天器信息上报列表查询
 post_satellite_report_search = app.config['POST_SATELLITE_REPORT_SEARCH']
@@ -332,6 +331,7 @@ def weather_forecast_data():
         gateway_station_location_url=gateway_station_location_url,
         weather_forecast_url=weather_forecast_url,
         weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
         tf1=data['start'],
         tf2=data['end'],
         gateway_station_name=data['gateway_station_name']
@@ -355,6 +355,7 @@ def weather_forecast_report():
         gateway_station_location_url=gateway_station_location_url,
         weather_forecast_url=weather_forecast_url,
         weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
         tf1=data['start'],
         tf2=data['end'],
         gateway_station_name=data['gateway_station_name']

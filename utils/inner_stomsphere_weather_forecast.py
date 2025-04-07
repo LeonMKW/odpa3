@@ -318,40 +318,104 @@ def transform_weather_data(raw_weather):
     return transformed
 
 
+def parse_timestamp_to_ms(value):
+    """
+    Attempts to parse 'value' into an integer millisecond timestamp.
+    Accepts either:
+      - A numeric string (already milliseconds),
+      - An ISO8601 string like '2025-04-07T10:25:43.000Z',
+      - An int/float.
+    Returns an integer (milliseconds).
+    """
+    if value is None:
+        return None
+
+    # If it's already an integer or float, just return int(value).
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    # If it's a string that looks purely numeric, parse as integer.
+    # e.g. '1744020925000'
+    stripped = str(value).strip()
+    if stripped.isdigit():
+        return int(stripped)
+
+    # Otherwise, assume it's an ISO8601 date like "2025-04-07T10:25:43.000Z".
+    # Convert to a datetime, then to Unix ms.
+    dt_obj = datetime.strptime(stripped, '%Y-%m-%dT%H:%M:%S.%fZ')
+    dt_utc = dt_obj.replace(tzinfo=pytz.UTC)
+    return int(dt_utc.timestamp() * 1000)
+
+
+def get_gateway_task(post_token_url,
+                     post_token_user_name,
+                     post_token_password, gateway_tasks_url, start, end):
+    # print(f"gatewayStart: {start}, End: {end}")
+
+    # No need to convert start and end to datetime objects; they are already in milliseconds
+    ts1 = int(start)  # Start time in milliseconds
+    ts2 = int(end)  # End time in milliseconds
+
+    token = get_header_token(post_token_url, post_token_user_name, post_token_password)
+
+    headers = {
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTE3Mywic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NDgwNzUwMDksImlhdCI6MTc0Mjg5MTAwOX0.HXNnCaWVIsF9D1hxlwgqnOy03OHxPed09G12qiZXug2oYKwvyv6ADTVTAEd2e1i1-qtve179oomF8CEWsayQag',
+        'x-web-token': token,
+        'Content-Type': 'application/json'  # Explicitly specify JSON format
+    }
+
+    payload = {
+        "startAt": ts1,
+        "endAt": ts2,
+        "spacecraftIds": [],
+        "antennaIDs": [],
+        "taskType": ["COMMUNICATION"]
+    }
+
+    response = requests.post(gateway_tasks_url, headers=headers, json=payload)
+    return response
+
+
 def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_password,
                               gateway_station_code_url, gateway_station_location_url,
                               tf1, tf2, gateway_station_name,
-                              weather_forecast_url, weather_forecast_key):
+                              weather_forecast_url, weather_forecast_key,
+                              gateway_tasks_url):
     # Handle default timestamps
     current_time_sec = int(time.time())
     if not tf1:
-        tf1 = (current_time_sec)  # 1 day ago
+        tf1_ms = current_time_sec * 1000  # "now" in ms
     else:
-        tf1 = int(tf1) // 1000  # assuming timestamp in milliseconds
+        tf1_ms = parse_timestamp_to_ms(tf1)  # convert whatever user gave us to ms
 
     if not tf2:
-        tf2 = (current_time_sec + 86400)  # 1 day ahead
+        tf2_ms = (current_time_sec + 86400) * 1000  # "tomorrow" in ms
     else:
-        tf2 = int(tf2) // 1000
+        tf2_ms = parse_timestamp_to_ms(tf2)  # convert user input to ms
 
-    # Check if gateway_station_name is a list, if yes, convert it to space-separated string
+    # Convert ms -> seconds for the weather API URL, if that API expects seconds
+    # (Your code showed dividing by 1000).
+    tf1_sec = tf1_ms // 1000
+    tf2_sec = tf2_ms // 1000
+
+    # If gateway_station_name is a list, join into a space-separated string
     if isinstance(gateway_station_name, list):
         keyword = ' '.join(gateway_station_name)
     else:
         keyword = gateway_station_name
 
-    # Now call fetch_antennas_lat_lon with the keyword
+    # Now call fetch_antennas_lat_lon
     antenna_locations = fetch_antennas_lat_lon(
         post_token_url, post_token_user_name, post_token_password,
         gateway_station_code_url, gateway_station_location_url,
         keyword
     )
-
     if not antenna_locations:
         return {"Error": "No antenna location data found"}
 
-    # For each antenna, query weather forecast
     weather_results = {}
+    transformed_data = {}  # define outside the try-block so it's always in scope
+
     for antenna_code, antenna_info in antenna_locations.items():
         lat = antenna_info.get("latitude")
         lon = antenna_info.get("longitude")
@@ -360,15 +424,14 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
             weather_results[antenna_code] = {"Error": "Invalid lat/lon"}
             continue
 
-        # Construct weather URL
+        # Construct weather URL. If the external weather API wants seconds, we pass tf1_sec/tf2_sec
         weather_query_url = (
-            f"{weather_forecast_url}/{lat},{lon}/{tf1}/{tf2}"
+            f"{weather_forecast_url}/{lat},{lon}/{tf1_sec}/{tf2_sec}"
             f"?key={weather_forecast_key}&contentType=json&lang=zh&unitGroup=metric"
         )
 
-        # Query weather data
         try:
-            resp = requests.get(weather_query_url, timeout=30)
+            resp = requests.get(weather_query_url, timeout=60)
             resp.raise_for_status()
             data = resp.json()
 
@@ -401,9 +464,104 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                 "currentConditions": data.get("currentConditions")
             }
 
-            weather_results = transform_weather_data(weather_results)
+            # Transform the data (if needed):
+            transformed_data = transform_weather_data(weather_results)
+
+            # Ensure every antenna has these two lists (so they appear even if empty):
+            for st_code in transformed_data:
+                transformed_data[st_code].setdefault("wind_during_task", [])
+                transformed_data[st_code].setdefault("rain_during_task", [])
+
+            # Fetch gateway tasks in the same time range (ms):
+            gateway_resp = get_gateway_task(
+                post_token_url,
+                post_token_user_name,
+                post_token_password,
+                gateway_tasks_url,
+                tf1_ms,  # pass ms
+                tf2_ms
+            )
+            try:
+                g_data = gateway_resp.json()
+            except Exception:
+                g_data = {"code": 999, "data": {"list": []}}
+
+            if g_data.get("code") != 0:
+                tasks_list = []
+            else:
+                tasks_list = g_data.get("data", {}).get("list", [])
+
+            # Cross-reference tasks with wind/rain alerts
+            # We'll store them in "wind_during_task" / "rain_during_task"
+            # The "code" e.g. "GSGW1803" from tasks -> antenna->code => same as antenna_code
+            station_alerts = transformed_data.get(antenna_code, {}).get("alerts", {})
+            wind_alerts = station_alerts.get("wind", [])
+            rain_alerts = station_alerts.get("rain", [])
+
+            # We define a helper to parse a time string to ms:
+            def parse_yyyymmdd_hhmmss_to_ms(dt_str):
+                # dt_str e.g. "2025-04-07 03:00:00"
+                bj_tz = pytz.timezone("Asia/Shanghai")
+                dt_obj = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                dt_bj = bj_tz.localize(dt_obj)
+                return int(dt_bj.timestamp() * 1000)
+
+            for t in tasks_list:
+                station_code = t.get("antenna", {}).get("code")
+                if not station_code:
+                    continue
+                if station_code not in transformed_data:
+                    continue
+
+                # Possibly different fields for time
+                start_task_ms = parse_timestamp_to_ms(t.get("beginTime") or t.get("startAt"))
+                end_task_ms = parse_timestamp_to_ms(t.get("endAt"))
+
+                if not (start_task_ms and end_task_ms):
+                    continue
+
+                # If station_code doesn't exist in final 'transformed_data', skip
+                if station_code not in transformed_data:
+                    continue
+
+                # Ensure we have lists
+                if "wind_during_task" not in transformed_data[station_code]:
+                    transformed_data[station_code]["wind_during_task"] = []
+                if "rain_during_task" not in transformed_data[station_code]:
+                    transformed_data[station_code]["rain_during_task"] = []
+
+                # Check wind alerts
+                for w_alert in wind_alerts:
+                    # e.g. "2025-04-07 03:00:00: 6-7级风力预警"
+                    splitted = w_alert.split(": ", maxsplit=1)
+                    if len(splitted) < 2:
+                        continue
+                    time_part = splitted[0]
+                    msg_part = splitted[1]
+                    alert_time_ms = parse_yyyymmdd_hhmmss_to_ms(time_part)
+
+                    if start_task_ms <= alert_time_ms <= end_task_ms:
+                        transformed_data[station_code]["wind_during_task"].append({
+                            "time": time_part,
+                            "message": msg_part
+                        })
+
+                # Check rain alerts
+                for r_alert in rain_alerts:
+                    splitted = r_alert.split(": ", maxsplit=1)
+                    if len(splitted) < 2:
+                        continue
+                    time_part = splitted[0]
+                    msg_part = splitted[1]
+                    alert_time_ms = parse_yyyymmdd_hhmmss_to_ms(time_part)
+
+                    if start_task_ms <= alert_time_ms <= end_task_ms:
+                        transformed_data[station_code]["rain_during_task"].append({
+                            "time": time_part,
+                            "message": msg_part
+                        })
 
         except requests.RequestException as e:
-            weather_results[antenna_code] = {"Error": f"Failed to fetch weather: {e}"}
+            transformed_data[antenna_code] = {"Error": f"Failed to fetch weather: {e}"}
 
-    return weather_results
+    return transformed_data
