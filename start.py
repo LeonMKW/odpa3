@@ -19,6 +19,7 @@ from utils.notification_content import space_weather_report_content, space_weath
     space_weather_orbit_pdf_report_alicoud
 
 from utils.inner_stomsphere_weather_forecast import fetch_antennas_lat_lon, get_weather_forecast_data
+from utils.notification_content_weather_forecast import generate_weather_forecast_report
 
 import warnings
 
@@ -346,7 +347,7 @@ def weather_forecast_report():
     if not data or "start" not in data or "end" not in data:
         return jsonify({"Error": "Please provide 'start', 'end'"}), 400
 
-    response = get_weather_forecast_report(
+    response = generate_weather_forecast_report(
         post_token_url=post_token_url,
         post_token_user_name=post_token_user_name,
         post_token_password=post_token_password,
@@ -371,83 +372,3 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7888))
     app.run(host='0.0.0.0', port=port, debug=True)
-    # daily_report_spiderling(orbitservice_url='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                         mete_data_service='http://mete-data-service.prod.yhroot.com/graphql',
-    #                         influxdb_input=influxdb_input,
-    #                         client_input=client_input,
-    #                         influxdb_action=influxdb_action,
-    #                         client_action=client_action,
-    #                         influxdb_chronograf=influxdb_chronograf,
-    #                         client_chronograf=client_chronograf,
-    #                         satID='6,7',
-    #                         date='2024-01-30',
-    #                         start='',
-    #                         end='')
-    # satellite_properties('http://mete-data-service.prod.yhroot.com/graphql', satIDs='2')
-    # od_tmcode('http://mete-data-service.prod.yhroot.com/graphql', satIDs='2')
-    # gnss_get_last('http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input, satIDs='2')
-    # ephemeris_acquire(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #     orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               startAt="2024-03-25T15:06:59.000Z",
-    #               endAt="2024-03-26T05:38:23.000Z",
-    #               satIDs="4")
-    # orbit_precision_calculation_step1(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #                                   orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                   _influxdb=influxdb_input, client=client_input, satIDs="4")
-
-    # orbit_precision_analysis_auto_task(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #                                    orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                    orbit_prop_url=orbit_prop_url,
-    #                                    _influxdb=influxdb_input, client=client_input, satID_list="6",
-    #                                    mariadb=mariadbsetup,
-    #                                    note_url=note_url,
-    #                                    OSS2=OSS2)
-
-    # satellite_status_data_auto_task('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input,
-    #                                 satIDs='13',
-    #                                 date='2024-04-25', start='', end='')
-    # OBCreset_influx('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='3',
-    #                 tf1='', tf2='')
-    # write_reset_count('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # write_switch_count('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # check_repeating_records('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # OBCreset_mongo_records('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                        tf1='2024-04-24T12:05:16.000Z',
-    #                        tf2='2024-04-24T23:07:23.000Z')
-    # write_cumulative_data('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                       tf1='2024-04-24T10:00:16.000Z', tf2='2024-04-24T23:07:23.000Z')
-
-    # calculate_cumulative_reset('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                            tf1='', tf2='',
-    #                            note_url=note_url)
-    # OBCswitch_data('http://mete-data-service.prod.yhroot.com/graphql', satID='3', tf1='', tf2='')
-    # hist_interval('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               'http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input,
-    #               "2024-03-25T15:06:59.000Z",
-    #               "2024-03-27T15:38:23.000Z",
-    #               '6')
-    # gnss_interval('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               'http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input,
-    #               "2024-03-28T00:06:59.000Z",
-    #               "2024-03-28T03:38:23.000Z",
-    #               '12')
-
-    # results_dict = experimental_uplock('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                    'http://mete-data-service.prod.yhroot.com/graphql',
-    #                                    influxdb_input, client_input,
-    #                                    "2024-03-22T04:39:30.000Z",
-    #                                    "2024-03-22T07:11:51.000Z", '12')
-
-    # results_dict = experimental_telemetry('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                       'http://mete-data-service.prod.yhroot.com/graphql',
-    #                                       influxdb_input, client_input,
-    #                                       "2024-03-22T04:39:30.000Z",
-    #                                       "2024-03-22T07:11:51.000Z", '12')
-    #
-    # json.dumps(results_dict)

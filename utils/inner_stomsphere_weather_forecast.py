@@ -246,85 +246,64 @@ def compute_precip_scale(precip_mm):
 
 # transform weather data functions
 def transform_weather_data(raw_weather):
-    """
-    Takes the dictionary structure from get_weather_forecast_data:
-
-    {
-      "GSGW0101": {
-        "alerts": [],
-        "antenna_name": ...,
-        "currentConditions": {...},
-        "days": [ { "hours": [ ... ] }, ... ],
-        "latitude": ...,
-        "longitude": ...,
-        "timezone": ...
-      },
-      "GSGW1803": {...},
-      ...
-    }
-
-    Returns a new dictionary with changes:
-    1) top-level => 'station_name'
-    2) add 'B_wind_scale' from windspeed
-    3) add 'precipitation_scale' from precip
-    4) add 'forecast_alert'
-    """
-
-    # We'll build a new dictionary. Potentially multiple stations
-    # => we can store them in a list or keep them as dict.
-    # If your front-end expects a single station, handle accordingly.
     transformed = {}
 
     for station_code, station_data in raw_weather.items():
-        # Build a new top-level structure
-        new_station_dict = {}
+        new_station_dict = {
+            "station_name": station_code,
+            "alerts": {"wind": [], "rain": []},
+            "antenna_name": station_data.get("antenna_name"),
+            "latitude": station_data.get("latitude"),
+            "longitude": station_data.get("longitude"),
+            "timezone": station_data.get("timezone"),
+        }
 
-        # 1) rename station_code -> "station_name"
-        # we'll put "station_name": station_code in the new dictionary
-        new_station_dict["station_name"] = station_code
-
-        # copy over existing top-level fields you want to keep
-        new_station_dict["alerts"] = station_data.get("alerts", [])
-        new_station_dict["antenna_name"] = station_data.get("antenna_name")
-        new_station_dict["latitude"] = station_data.get("latitude")
-        new_station_dict["longitude"] = station_data.get("longitude")
-        new_station_dict["timezone"] = station_data.get("timezone")
-
-        # 4) add "forecast_alert" as a placeholder
-        new_station_dict["forecast_alert"] = "TODO: fill logic here"
-
-        # For "currentConditions", we can add B_wind_scale and precipitation_scale
+        # Process current conditions
         cc = station_data.get("currentConditions", {})
-        # if "windspeed" is in km/h
-        windspeed = cc.get("windspeed")  # can be float or None
+        windspeed = cc.get("windspeed")
         if windspeed is not None:
             cc["B_wind_scale"] = compute_beaufort_scale(windspeed)
+            cc["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(cc["B_wind_scale"])
 
-        precip = cc.get("precip")  # mm
+        precip = cc.get("precip")
         if precip is not None:
             cc["precipitation_scale"] = compute_precip_scale(precip)
 
         new_station_dict["currentConditions"] = cc
 
-        # For days -> hours
+        # Initialize days
         new_days = []
         for d in station_data.get("days", []):
-            # We'll copy day except for hours (transform hours)
             day_copy = dict(d)
             old_hours = day_copy.pop("hours", [])
             new_hours = []
+
             for hour in old_hours:
-                # Insert B_wind_scale
+                hour_dt = f"{d.get('datetime')} {hour.get('datetime')}"
                 ws = hour.get("windspeed")
+                pr = hour.get("precip")
+
                 if ws is not None:
                     b_scale = compute_beaufort_scale(ws)
                     hour["B_wind_scale"] = b_scale
                     hour["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(b_scale)
 
-                # Insert precipitation_scale
-                pr = hour.get("precip")
+                    if 6 <= b_scale <= 7:
+                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 6-7级风力预警")
+                    elif 8 <= b_scale <= 9:
+                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 8-9级风力预警")
+                    elif b_scale >= 10:
+                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 10+级风力预警")
+
                 if pr is not None:
                     hour["precipitation_scale"] = compute_precip_scale(pr)
+
+                    if pr > 100:
+                        new_station_dict["alerts"]["rain"].append(f"{hour_dt}: 特大暴雨预警")
+                    elif pr > 50:
+                        new_station_dict["alerts"]["rain"].append(f"{hour_dt}: 大雨预警")
+                    elif pr > 25:
+                        new_station_dict["alerts"]["rain"].append(f"{hour_dt}: 中雨预警")
 
                 new_hours.append(hour)
 
@@ -333,7 +312,7 @@ def transform_weather_data(raw_weather):
 
         new_station_dict["days"] = new_days
 
-        # Insert into the final dict
+        # Assign to transformed dictionary
         transformed[station_code] = new_station_dict
 
     return transformed
@@ -346,7 +325,7 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
     # Handle default timestamps
     current_time_sec = int(time.time())
     if not tf1:
-        tf1 = (current_time_sec - 86400)  # 1 day ago
+        tf1 = (current_time_sec)  # 1 day ago
     else:
         tf1 = int(tf1) // 1000  # assuming timestamp in milliseconds
 
@@ -422,7 +401,7 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                 "currentConditions": data.get("currentConditions")
             }
 
-            transform_weather_data(weather_results)
+            weather_results = transform_weather_data(weather_results)
 
         except requests.RequestException as e:
             weather_results[antenna_code] = {"Error": f"Failed to fetch weather: {e}"}

@@ -982,7 +982,7 @@ def space_weather_orbit_pdf_report_alicoud(
         gnss_config,
         OSS2,
         notification_url
-    ):
+):
     """
     1) Generates a PDF report, uploads it to Alibaba Cloud OSS
     2) Also generates a summary_table PNG, uploads it
@@ -1054,5 +1054,3 @@ def space_weather_orbit_pdf_report_alicoud(
         print(f"Error sending DingTalk notification: {e}")
 
     return f"PDF created with snapshot:{report_url}"
-
-
