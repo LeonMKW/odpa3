@@ -971,7 +971,7 @@ def space_weather_orbit_pdf_report(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
     return f"Report successfully generated: {filename}"
 
 
-def space_weather_orbit_pdf_report_alicoud(
+def space_weather_orbit_pdf_report_alicloud(
         tf1, tf2,
         get_F10point7, get_ApIndex, get_KpIndex,
         satID_list,
@@ -982,7 +982,7 @@ def space_weather_orbit_pdf_report_alicoud(
         gnss_config,
         OSS2,
         notification_url
-    ):
+):
     """
     1) Generates a PDF report, uploads it to Alibaba Cloud OSS
     2) Also generates a summary_table PNG, uploads it
@@ -1054,5 +1054,3 @@ def space_weather_orbit_pdf_report_alicoud(
         print(f"Error sending DingTalk notification: {e}")
 
     return f"PDF created with snapshot:{report_url}"
-
-
