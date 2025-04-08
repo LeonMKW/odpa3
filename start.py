@@ -16,7 +16,11 @@ from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 from utils.notification_content import space_weather_report_content, space_weather_info_only, \
     space_weather_info_with_summary, space_weather_orbit_pdf_report, space_weather_report_raw, \
-    space_weather_orbit_pdf_report_alicoud
+    space_weather_orbit_pdf_report_alicloud
+
+from utils.inner_stomsphere_weather_forecast import fetch_antennas_lat_lon, get_weather_forecast_data
+from utils.notification_content_weather_forecast import generate_weather_forecast_report, \
+    inner_atmosphere_weather_forecast_report_alicloud
 
 import warnings
 
@@ -77,8 +81,7 @@ OSS2 = db.OSS2(app.config['OSS2_ENDPOINT'],
                app.config['OSS2_SECRET'])
 
 # 查信关站任务
-# gateway_url = app.config['APPLICATION_TASK']
-# gateway_auth = app.config['APPLICATION_AUTHORIZATION']
+gateway_tasks_url = app.config['APPLICATION_TASK']
 
 # 航天器信息上报列表查询
 post_satellite_report_search = app.config['POST_SATELLITE_REPORT_SEARCH']
@@ -111,6 +114,16 @@ get_calc_result_url = app.config['GET_CALC_RESULT']
 
 # push notification
 notification_url = app.config['NOTIFICATION_URL']
+
+# weather forecast data
+weather_forecast_url = app.config['WEATHER_FORECAST_URL']
+weather_forecast_key = app.config['WEATHER__FORECAST_KEY']
+
+# gateway station code
+gateway_station_code_url = app.config['GATEWAY_STATION_CODE_URL']
+
+# gateway station location
+gateway_station_location_url = app.config['GATEWAY_STATION_LOCATION_URL']
 
 app = Flask(__name__)
 CORS(app)
@@ -214,7 +227,7 @@ def sei_orbit_pdfreport_alicloud():
     if not data or "start" not in data or "end" not in data or "satIDs" not in data:
         return jsonify({"Error": "Please provide 'start', 'end', and 'satIDs'"}), 400
 
-    response = space_weather_orbit_pdf_report_alicoud(
+    response = space_weather_orbit_pdf_report_alicloud(
         tf1=data['start'],
         tf2=data['end'],
         get_F10point7=get_F10point7,
@@ -285,84 +298,97 @@ def space_enviroment_data_raw():
     return jsonify({"message": response}), 200
 
 
-# OSS2 = OSS2,
-# note_url = note_url,
+# gettting location
+@app.route('/gateway-location', methods=['POST'])
+def gateway_location():
+    data = request.json
+    if not data or "keyword" not in data:
+        return jsonify({"Error": "Please provide 'keyword'"}), 400
 
-# # excute collision avoidance PA//自动计算系列
-# @app.route('/capa', methods=['POST'])
-# def capa():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = collision_avoidance_precision_analysis_auto_task(metedataservice_url=mete_data_service,
-#                                                                 orbitserviceurl=orbit_service,
-#                                                                 _influxdb=influxdb_input, client=client_input,
-#                                                                 mariadb=mariadbsetup,
-#                                                                 note_url=note_url,
-#                                                                 orbit_prop_url=orbit_prop_url,
-#                                                                 OSS2=OSS2,
-#                                                                 satID_list=data['satIDs']
-#                                                                 )
-#     return jsonify(response), 200
+    response = fetch_antennas_lat_lon(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        keyword=data['keyword']
+    )
 
-# @app.route('/obh', methods=['POST'])
-# def all_obh():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = get_obh(
-#         post_token_url,
-#         post_token_user_name,
-#         post_token_password,
-#         mete_data_service=mete_data_service,
-#         influxdb_orbdata=influxdb_orbdata,
-#         client_orbdata=client_orbdata,
-#         satID=data['satID'],  # Accept multiple satellite IDs
-#         start=data['start'],
-#         end=data['end']
-#     )
-#
-#     return Response(response=response,
-#                     status=200,
-#                     mimetype='application/json')
+    return jsonify({"message": response}), 200
 
 
-# try
-# @app.route('/try', methods=['POST'])
-# def od_temp():
-#     data = request.json
-#     if data is None or data == {}:
-#         return Response(response=json.dumps({"Error": "Please provide connection information"}),
-#                         status=400,
-#                         mimetype='application/json')
-#
-#     response = propagating_2nd_predictive_ephemeris(
-#         post_token_url,
-#         post_token_user_name,
-#         post_token_password,
-#         mete_data_service=mete_data_service,
-#         post_satellite_report_search_url=post_satellite_report_search,
-#         get_satellite_file_download_url=get_satellite_file_download,
-#         satelliteId=data['satelliteId'],
-#         reportTypes=data['reportTypes'],
-#         beginTime=data['beginTime'],
-#         endTime=data['endTime'],
-#         states=data['states'],
-#         _influxdb=influxdb_input,
-#         client=client_input,
-#         orbit_prop_url=orbit_prop_url,
-#         propagation_hours=data['propagation_hours'],
-#     )
-#
-#     return Response(response=response,
-#                     status=200,
-#                     mimetype='application/json')
+# 天气信息获取
+@app.route('/weather-forecast-data', methods=['POST'])
+def weather_forecast_data():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = get_weather_forecast_data(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name']
+    )
+
+    return jsonify({"message": response}), 200
+
+
+# 天气预报报告本地
+@app.route('/weather-forecast-report', methods=['POST'])
+def weather_forecast_report():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = generate_weather_forecast_report(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name']
+    )
+
+    return jsonify({"message": response}), 200
+
+
+# 天气预报报告阿里云推送
+@app.route('/weather-forecast-report-alicloud', methods=['POST'])
+def weather_forecast_report_pdf_alicloud():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = inner_atmosphere_weather_forecast_report_alicloud(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name'],
+        OSS2=OSS2,
+        notification_url=notification_url
+    )
+
+    return jsonify({"message": response}), 200
 
 
 @app.route('/index', methods=['GET'])
@@ -374,83 +400,3 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7888))
     app.run(host='0.0.0.0', port=port, debug=True)
-    # daily_report_spiderling(orbitservice_url='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                         mete_data_service='http://mete-data-service.prod.yhroot.com/graphql',
-    #                         influxdb_input=influxdb_input,
-    #                         client_input=client_input,
-    #                         influxdb_action=influxdb_action,
-    #                         client_action=client_action,
-    #                         influxdb_chronograf=influxdb_chronograf,
-    #                         client_chronograf=client_chronograf,
-    #                         satID='6,7',
-    #                         date='2024-01-30',
-    #                         start='',
-    #                         end='')
-    # satellite_properties('http://mete-data-service.prod.yhroot.com/graphql', satIDs='2')
-    # od_tmcode('http://mete-data-service.prod.yhroot.com/graphql', satIDs='2')
-    # gnss_get_last('http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input, satIDs='2')
-    # ephemeris_acquire(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #     orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               startAt="2024-03-25T15:06:59.000Z",
-    #               endAt="2024-03-26T05:38:23.000Z",
-    #               satIDs="4")
-    # orbit_precision_calculation_step1(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #                                   orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                   _influxdb=influxdb_input, client=client_input, satIDs="4")
-
-    # orbit_precision_analysis_auto_task(metedataservice_url='http://mete-data-service.prod.yhroot.com/graphql',
-    #                                    orbitserviceurl='http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                    orbit_prop_url=orbit_prop_url,
-    #                                    _influxdb=influxdb_input, client=client_input, satID_list="6",
-    #                                    mariadb=mariadbsetup,
-    #                                    note_url=note_url,
-    #                                    OSS2=OSS2)
-
-    # satellite_status_data_auto_task('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input,
-    #                                 satIDs='13',
-    #                                 date='2024-04-25', start='', end='')
-    # OBCreset_influx('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='3',
-    #                 tf1='', tf2='')
-    # write_reset_count('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # write_switch_count('http://mete-data-service.prod.yhroot.com/graphql', influxdb_input, client_input, satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # check_repeating_records('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                   tf1='2024-05-06T00:00:00.000Z', tf2='2024-05-06T06:40:00.000Z')
-    # OBCreset_mongo_records('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                        tf1='2024-04-24T12:05:16.000Z',
-    #                        tf2='2024-04-24T23:07:23.000Z')
-    # write_cumulative_data('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                       tf1='2024-04-24T10:00:16.000Z', tf2='2024-04-24T23:07:23.000Z')
-
-    # calculate_cumulative_reset('http://mete-data-service.prod.yhroot.com/graphql', satID='4',
-    #                            tf1='', tf2='',
-    #                            note_url=note_url)
-    # OBCswitch_data('http://mete-data-service.prod.yhroot.com/graphql', satID='3', tf1='', tf2='')
-    # hist_interval('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               'http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input,
-    #               "2024-03-25T15:06:59.000Z",
-    #               "2024-03-27T15:38:23.000Z",
-    #               '6')
-    # gnss_interval('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #               'http://mete-data-service.prod.yhroot.com/graphql',
-    #               influxdb_input, client_input,
-    #               "2024-03-28T00:06:59.000Z",
-    #               "2024-03-28T03:38:23.000Z",
-    #               '12')
-
-    # results_dict = experimental_uplock('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                    'http://mete-data-service.prod.yhroot.com/graphql',
-    #                                    influxdb_input, client_input,
-    #                                    "2024-03-22T04:39:30.000Z",
-    #                                    "2024-03-22T07:11:51.000Z", '12')
-
-    # results_dict = experimental_telemetry('http://orbit-service-inf.prod.yhroot.com/graphql',
-    #                                       'http://mete-data-service.prod.yhroot.com/graphql',
-    #                                       influxdb_input, client_input,
-    #                                       "2024-03-22T04:39:30.000Z",
-    #                                       "2024-03-22T07:11:51.000Z", '12')
-    #
-    # json.dumps(results_dict)
