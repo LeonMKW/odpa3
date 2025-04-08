@@ -16,10 +16,11 @@ from utils.dailyreport_utils import sei_dingtalk_news
 # collision_avoidance_precision_analysis_auto_task
 from utils.notification_content import space_weather_report_content, space_weather_info_only, \
     space_weather_info_with_summary, space_weather_orbit_pdf_report, space_weather_report_raw, \
-    space_weather_orbit_pdf_report_alicoud
+    space_weather_orbit_pdf_report_alicloud
 
 from utils.inner_stomsphere_weather_forecast import fetch_antennas_lat_lon, get_weather_forecast_data
-from utils.notification_content_weather_forecast import generate_weather_forecast_report
+from utils.notification_content_weather_forecast import generate_weather_forecast_report, \
+    inner_atmosphere_weather_forecast_report_alicloud
 
 import warnings
 
@@ -226,7 +227,7 @@ def sei_orbit_pdfreport_alicloud():
     if not data or "start" not in data or "end" not in data or "satIDs" not in data:
         return jsonify({"Error": "Please provide 'start', 'end', and 'satIDs'"}), 400
 
-    response = space_weather_orbit_pdf_report_alicoud(
+    response = space_weather_orbit_pdf_report_alicloud(
         tf1=data['start'],
         tf2=data['end'],
         get_F10point7=get_F10point7,
@@ -340,7 +341,7 @@ def weather_forecast_data():
     return jsonify({"message": response}), 200
 
 
-# 天气预报报告推送
+# 天气预报报告本地
 @app.route('/weather-forecast-report', methods=['POST'])
 def weather_forecast_report():
     data = request.json
@@ -359,6 +360,32 @@ def weather_forecast_report():
         tf1=data['start'],
         tf2=data['end'],
         gateway_station_name=data['gateway_station_name']
+    )
+
+    return jsonify({"message": response}), 200
+
+
+# 天气预报报告阿里云推送
+@app.route('/weather-forecast-report-alicloud', methods=['POST'])
+def weather_forecast_report_pdf_alicloud():
+    data = request.json
+    if not data or "start" not in data or "end" not in data:
+        return jsonify({"Error": "Please provide 'start', 'end'"}), 400
+
+    response = inner_atmosphere_weather_forecast_report_alicloud(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
+        tf1=data['start'],
+        tf2=data['end'],
+        gateway_station_name=data['gateway_station_name'],
+        OSS2=OSS2,
+        notification_url=notification_url
     )
 
     return jsonify({"message": response}), 200

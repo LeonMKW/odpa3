@@ -971,7 +971,7 @@ def space_weather_orbit_pdf_report(tf1, tf2, get_F10point7, get_ApIndex, get_KpI
     return f"Report successfully generated: {filename}"
 
 
-def space_weather_orbit_pdf_report_alicoud(
+def space_weather_orbit_pdf_report_alicloud(
         tf1, tf2,
         get_F10point7, get_ApIndex, get_KpIndex,
         satID_list,

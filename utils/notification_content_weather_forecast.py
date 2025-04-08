@@ -12,17 +12,17 @@ from utils.inner_atomsphere_report_generate import create_weather_forecast_pdf
 
 
 def generate_weather_forecast_report(
-    post_token_url,
-    post_token_user_name,
-    post_token_password,
-    gateway_station_code_url,
-    gateway_station_location_url,
-    weather_forecast_url,
-    weather_forecast_key,
-    gateway_tasks_url,
-    tf1,
-    tf2,
-    gateway_station_name
+        post_token_url,
+        post_token_user_name,
+        post_token_password,
+        gateway_station_code_url,
+        gateway_station_location_url,
+        weather_forecast_url,
+        weather_forecast_key,
+        gateway_tasks_url,
+        tf1,
+        tf2,
+        gateway_station_name
 ):
     """
     1. Query & transform weather data for each station.
@@ -62,3 +62,79 @@ def generate_weather_forecast_report(
         "message": "Weather Forecast Report generated",
         "pdf_local_path": filepath_local
     }
+
+
+def inner_atmosphere_weather_forecast_report_alicloud(
+        post_token_url,
+        post_token_user_name,
+        post_token_password,
+        gateway_station_code_url,
+        gateway_station_location_url,
+        weather_forecast_url,
+        weather_forecast_key,
+        gateway_tasks_url,
+        tf1,
+        tf2,
+        gateway_station_name,
+        OSS2,
+        notification_url
+):
+    # 1) Gather all weather data
+    weather_data = get_weather_forecast_data(
+        post_token_url=post_token_url,
+        post_token_user_name=post_token_user_name,
+        post_token_password=post_token_password,
+        gateway_station_code_url=gateway_station_code_url,
+        gateway_station_location_url=gateway_station_location_url,
+        weather_forecast_url=weather_forecast_url,
+        weather_forecast_key=weather_forecast_key,
+        gateway_tasks_url=gateway_tasks_url,
+        tf1=tf1,
+        tf2=tf2,
+        gateway_station_name=gateway_station_name
+    )
+
+    # 2) Prepare output folder
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, '..'))
+    output_folder = os.path.join(project_root, "data")
+    os.makedirs(output_folder, exist_ok=True)
+
+    # 3) Generate local PDF name and path
+    local_filename = f"inner_atmo_weather_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    local_path = os.path.join(output_folder, local_filename)
+
+    # 4) Build the PDF using your custom function
+    create_weather_forecast_pdf(local_path, weather_data)
+
+    # 5) Upload PDF to OSS
+    oss_key_pdf = f"pdf-reports/{local_filename}"
+    OSS2.upload_file(oss_key_pdf, local_path)
+    report_url = OSS2.make_url(oss_key_pdf)
+
+    # Remove local file if desired
+    os.remove(local_path)
+
+    # 6) Prepare DingTalk-like payload
+    payload = {
+        "System": "odpa3",
+        "NoticeCode": "gs_weather_forecast_pdf",
+        "type": "action_card",
+        "Param": {
+            "reportlink": report_url
+            # Add more fields if needed
+        }
+    }
+
+    # 7) Send the notification
+    try:
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(notification_url, json=payload, headers=headers, timeout=300)
+        if response.status_code == 200:
+            print("DingTalk (action_card) notification posted successfully.")
+        else:
+            print(f"Failed to post notification! Status={response.status_code}, Resp={response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending DingTalk notification: {e}")
+
+    return f"PDF created and uploaded => {report_url}"
