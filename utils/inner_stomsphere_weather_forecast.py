@@ -258,18 +258,23 @@ def transform_weather_data(raw_weather):
             "timezone": station_data.get("timezone"),
         }
 
-        # Process current conditions
-        cc = station_data.get("currentConditions", {})
-        windspeed = cc.get("windspeed")
-        if windspeed is not None:
-            cc["B_wind_scale"] = compute_beaufort_scale(windspeed)
-            cc["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(cc["B_wind_scale"])
+        # Process current conditions (if any)
+        cc = station_data.get("currentConditions")
+        if not cc:
+            # If there is no current conditions data, or it's empty, just store "未查询到结果"
+            new_station_dict["currentConditions"] = "未查询到结果"
+        else:
+            # Copy or manipulate the cc dictionary as needed
+            windspeed = cc.get("windspeed")
+            if windspeed is not None:
+                cc["B_wind_scale"] = compute_beaufort_scale(windspeed)
+                cc["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(cc["B_wind_scale"])
 
-        precip = cc.get("precip")
-        if precip is not None:
-            cc["precipitation_scale"] = compute_precip_scale(precip)
+            precip = cc.get("precip")
+            if precip is not None:
+                cc["precipitation_scale"] = compute_precip_scale(precip)
 
-        new_station_dict["currentConditions"] = cc
+            new_station_dict["currentConditions"] = cc
 
         # Initialize days
         new_days = []
@@ -381,45 +386,40 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                               tf1, tf2, gateway_station_name,
                               weather_forecast_url, weather_forecast_key,
                               gateway_tasks_url,
-                              future_how_many_days
-                              ):
-    # Handle default timestamps
+                              future_how_many_days):
+
     current_time_sec = int(time.time())
-    # Ensure that future_how_many_days is provided.
-    if not future_how_many_days:
-        return {"Error": "forecast times must be provided: future_how_many_days is required"}
 
-    # Try to convert future_how_many_days to an integer.
-    try:
-        days = int(future_how_many_days)
-    except Exception:
-        return {"Error": "Invalid future_how_many_days parameter"}
-
-    # Limit future_how_many_days to a maximum of 15.
-    if days > 15:
-        days = 15
-
-    # Case 1: Neither tf1 nor tf2 was provided.
-    if not tf1 and not tf2:
-        tf1_ms = current_time_sec * 1000  # Current time as tf1 (in ms)
-        tf2_ms = (current_time_sec + days * 86400) * 1000  # tf2 using future_how_many_days
-    # Case 2: tf1 is provided but tf2 is missing.
-    elif tf1 and not tf2:
-        return {"Error": "Empty tf2: both tf1 and tf2 must be provided if one is provided"}
-    # Case 3: tf2 is provided but tf1 is missing.
-    elif tf2 and not tf1:
-        return {"Error": "Empty tf1: both tf1 and tf2 must be provided if one is provided"}
-    # Case 4: Both tf1 and tf2 are provided.
-    else:
-        # Assume parse_timestamp_to_ms is your existing helper function to convert input timestamps to ms
+    # 1. If both tf1 and tf2 are provided
+    if tf1 and tf2:
         tf1_ms = parse_timestamp_to_ms(tf1)
         tf2_ms = parse_timestamp_to_ms(tf2)
+        if tf1_ms >= tf2_ms:
+            return {"Error": "Invalid input: end must be later than start."}
 
-    # Ensure that tf1 is not later than the current time.
-    if tf1_ms > current_time_sec * 1000:
-        tf1_ms = current_time_sec * 1000
+    # 2. If exactly one of tf1 or tf2 is provided => Error
+    elif tf1 or tf2:
+        return {"Error": "Both tf1 and tf2 must be provided if one is provided."}
 
-    # Optionally convert timestamps back to seconds if your API requires seconds.
+    # 3. If neither tf1 nor tf2 is provided
+    else:
+        # No start/end given
+        if not future_how_many_days:
+            # Default to 2 days
+            tf1_ms = current_time_sec * 1000
+            tf2_ms = (current_time_sec + 2 * 86400) * 1000
+        else:
+            # Use user-provided future_how_many_days (clamp at 15)
+            try:
+                days = int(future_how_many_days)
+            except Exception:
+                return {"Error": "Invalid future_how_many_days parameter"}
+            if days > 15:
+                days = 15
+            tf1_ms = current_time_sec * 1000
+            tf2_ms = (current_time_sec + days * 86400) * 1000
+
+    # Convert milliseconds to seconds if needed
     tf1_sec = tf1_ms // 1000
     tf2_sec = tf2_ms // 1000
 
@@ -452,7 +452,7 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
         # Construct weather URL. If the external weather API wants seconds, we pass tf1_sec/tf2_sec
         weather_query_url = (
             f"{weather_forecast_url}/{lat},{lon}/{tf1_sec}/{tf2_sec}"
-            f"?key={weather_forecast_key}&contentType=json&lang=zh&unitGroup=metric"
+            f"?key={weather_forecast_key}&contentType=json&&lang=zh&unitGroup=metric"
         )
 
         try:

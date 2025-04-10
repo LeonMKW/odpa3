@@ -97,6 +97,7 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         gateway_station_name=gateway_station_name,
         future_how_many_days=future_how_many_days
     )
+    print(weather_data)
 
     # 2) Prepare output folder
     script_dir = os.path.dirname(os.path.abspath(__file__))

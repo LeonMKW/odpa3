@@ -85,17 +85,21 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
 
         # Current conditions
         cc = st_data.get("currentConditions", {})
+        if isinstance(cc, str):
+            # If cc is "未查询到结果" or any other string, just show the string.
+            cc_text = f"<b>当前状况:</b><br/>{cc}"
+        else:
+            # cc is presumably a dictionary
+            cc_text = (
+                f"<b>当前状况:</b><br/>"
+                f"气温: {cc.get('temp')}℃; 湿度: {cc.get('humidity')}%<br/>"
+                f"风速: {cc.get('windspeed')} km/h; 风力: {cc.get('B_wind_scale')}级 ({cc.get('B_wind_scale_chinese')})<br/>"
+                f"天气: {cc.get('conditions')}<br/>"
+                f"降水: {cc.get('precip', '0.0')} mm ({cc.get('precipitation_scale', '无雨')})"
+            )
 
-        cc_text = (
-            f"<b>当前状况:</b><br/>"
-            f"气温: {cc.get('temp')}℃; 湿度: {cc.get('humidity')}%<br/>"
-            f"风速: {cc.get('windspeed')} km/h; 风力: {cc.get('B_wind_scale')}级 ({cc.get('B_wind_scale_chinese')})<br/>"
-            f"天气: {cc.get('conditions')}<br/>"
-            f"降水: {cc.get('precip', '0.0')} mm ({cc.get('precipitation_scale', '无雨')})"
-        )
         story.append(Paragraph(cc_text, styles["default"]))
         story.append(Spacer(1, 12))
-
 
         # Show alerts: separate wind vs. rain
         alerts = st_data.get("alerts", {})
@@ -114,7 +118,6 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
             if wind_alerts:
                 story.append(Paragraph("<b>风力预警：</b>", styles["default"]))
                 for walert in wind_alerts:
-                    # bullet style
                     story.append(Paragraph(f"• {walert}", styles["default"]))
                 story.append(Spacer(1, 6))
 
@@ -133,7 +136,6 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
             if wind_during_task:
                 story.append(Paragraph("• <b>任务期间风力预警</b>", styles["default"]))
                 for witem in wind_during_task:
-                    # witem is a dict like { "time": "2025-04-07 03:00:00", "message": "6-7级风力预警" }
                     w_time = witem["time"]
                     w_msg = witem["message"]
                     story.append(Paragraph(f"- {w_time} => {w_msg}", styles["default"]))
@@ -178,4 +180,5 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
         story.append(PageBreak())
 
     doc.build(story)
+
 
