@@ -22,7 +22,8 @@ def generate_weather_forecast_report(
         gateway_tasks_url,
         tf1,
         tf2,
-        gateway_station_name
+        gateway_station_name,
+        future_how_many_days
 ):
     """
     1. Query & transform weather data for each station.
@@ -43,7 +44,8 @@ def generate_weather_forecast_report(
         gateway_tasks_url=gateway_tasks_url,
         tf1=tf1,
         tf2=tf2,
-        gateway_station_name=gateway_station_name
+        gateway_station_name=gateway_station_name,
+        future_how_many_days=future_how_many_days
     )
 
     # 3) Build a PDF locally
@@ -77,7 +79,8 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         tf2,
         gateway_station_name,
         OSS2,
-        notification_url
+        notification_url,
+        future_how_many_days
 ):
     # 1) Gather all weather data
     weather_data = get_weather_forecast_data(
@@ -91,7 +94,8 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         gateway_tasks_url=gateway_tasks_url,
         tf1=tf1,
         tf2=tf2,
-        gateway_station_name=gateway_station_name
+        gateway_station_name=gateway_station_name,
+        future_how_many_days=future_how_many_days
     )
 
     # 2) Prepare output folder

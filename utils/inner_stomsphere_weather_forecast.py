@@ -380,25 +380,50 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                               gateway_station_code_url, gateway_station_location_url,
                               tf1, tf2, gateway_station_name,
                               weather_forecast_url, weather_forecast_key,
-                              gateway_tasks_url):
+                              gateway_tasks_url,
+                              future_how_many_days
+                              ):
     # Handle default timestamps
     current_time_sec = int(time.time())
-    if not tf1:
-        tf1_ms = current_time_sec * 1000  # "now" in ms
-    else:
-        tf1_ms = parse_timestamp_to_ms(tf1)  # convert whatever user gave us to ms
+    # Ensure that future_how_many_days is provided.
+    if not future_how_many_days:
+        return {"Error": "forecast times must be provided: future_how_many_days is required"}
 
-    if not tf2:
-        tf2_ms = (current_time_sec + 86400) * 1000  # "tomorrow" in ms
-    else:
-        tf2_ms = parse_timestamp_to_ms(tf2)  # convert user input to ms
+    # Try to convert future_how_many_days to an integer.
+    try:
+        days = int(future_how_many_days)
+    except Exception:
+        return {"Error": "Invalid future_how_many_days parameter"}
 
-    # Convert ms -> seconds for the weather API URL, if that API expects seconds
-    # (Your code showed dividing by 1000).
+    # Limit future_how_many_days to a maximum of 15.
+    if days > 15:
+        days = 15
+
+    # Case 1: Neither tf1 nor tf2 was provided.
+    if not tf1 and not tf2:
+        tf1_ms = current_time_sec * 1000  # Current time as tf1 (in ms)
+        tf2_ms = (current_time_sec + days * 86400) * 1000  # tf2 using future_how_many_days
+    # Case 2: tf1 is provided but tf2 is missing.
+    elif tf1 and not tf2:
+        return {"Error": "Empty tf2: both tf1 and tf2 must be provided if one is provided"}
+    # Case 3: tf2 is provided but tf1 is missing.
+    elif tf2 and not tf1:
+        return {"Error": "Empty tf1: both tf1 and tf2 must be provided if one is provided"}
+    # Case 4: Both tf1 and tf2 are provided.
+    else:
+        # Assume parse_timestamp_to_ms is your existing helper function to convert input timestamps to ms
+        tf1_ms = parse_timestamp_to_ms(tf1)
+        tf2_ms = parse_timestamp_to_ms(tf2)
+
+    # Ensure that tf1 is not later than the current time.
+    if tf1_ms > current_time_sec * 1000:
+        tf1_ms = current_time_sec * 1000
+
+    # Optionally convert timestamps back to seconds if your API requires seconds.
     tf1_sec = tf1_ms // 1000
     tf2_sec = tf2_ms // 1000
 
-    # If gateway_station_name is a list, join into a space-separated string
+    # Process gateway_station_name into a keyword string if it is a list.
     if isinstance(gateway_station_name, list):
         keyword = ' '.join(gateway_station_name)
     else:

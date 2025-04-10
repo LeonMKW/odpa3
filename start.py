@@ -335,7 +335,8 @@ def weather_forecast_data():
         gateway_tasks_url=gateway_tasks_url,
         tf1=data['start'],
         tf2=data['end'],
-        gateway_station_name=data['gateway_station_name']
+        gateway_station_name=data['gateway_station_name'],
+        future_how_many_days=data['future_how_many_days']
     )
 
     return jsonify({"message": response}), 200
@@ -359,7 +360,8 @@ def weather_forecast_report():
         gateway_tasks_url=gateway_tasks_url,
         tf1=data['start'],
         tf2=data['end'],
-        gateway_station_name=data['gateway_station_name']
+        gateway_station_name=data['gateway_station_name'],
+        future_how_many_days=data['future_how_many_days']
     )
 
     return jsonify({"message": response}), 200
@@ -384,6 +386,7 @@ def weather_forecast_report_pdf_alicloud():
         tf1=data['start'],
         tf2=data['end'],
         gateway_station_name=data['gateway_station_name'],
+        future_how_many_days=data['future_how_many_days'],
         OSS2=OSS2,
         notification_url=notification_url
     )
