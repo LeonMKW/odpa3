@@ -1,23 +1,6 @@
-import os
-import io
-import time
+
 import pytz
-import json
-import requests
 from datetime import datetime
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import Paragraph, Spacer, SimpleDocTemplate, Table, TableStyle, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.fonts import addMapping
-# If you want Chinese fonts, register SimSun etc:
-# pdfmetrics.registerFont(TTFont('SimSun', 'SimSun.ttf'))
-# addMapping('SimSun', 0, 0, 'SimSun')
-# from .db import OSS2  # if you have a class for Alibaba Cloud OSS
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -58,9 +41,12 @@ styles = {
 
 # Function to create the PDF
 def create_weather_forecast_pdf(pdf_path, weather_data):
-    doc = SimpleDocTemplate(pdf_path, pagesize=A4,
-                            rightMargin=inch, leftMargin=inch,
-                            topMargin=inch, bottomMargin=inch)
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=A4,
+        rightMargin=inch, leftMargin=inch,
+        topMargin=inch, bottomMargin=inch
+    )
 
     story = []
 
@@ -90,10 +76,12 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
             cc_text = f"<b>当前状况:</b><br/>{cc}"
         else:
             # cc is presumably a dictionary
+            # Include windgust in the text
             cc_text = (
                 f"<b>当前状况:</b><br/>"
                 f"气温: {cc.get('temp')}℃; 湿度: {cc.get('humidity')}%<br/>"
-                f"风速: {cc.get('windspeed')} km/h; 风力: {cc.get('B_wind_scale')}级 ({cc.get('B_wind_scale_chinese')})<br/>"
+                f"风速: {cc.get('windspeed')} km/h; 平均: {cc.get('B_wind_scale')}级 ({cc.get('B_wind_scale_chinese')})<br/>"
+                f"阵风: {cc.get('windgust')} km/h; 阵风风力: {cc.get('B_wind_gust_scale')}级 ({cc.get('B_wind_gust_scale_chinese')})<br/>"
                 f"天气: {cc.get('conditions')}<br/>"
                 f"降水: {cc.get('precip', '0.0')} mm ({cc.get('precipitation_scale', '无雨')})"
             )
@@ -101,24 +89,35 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
         story.append(Paragraph(cc_text, styles["default"]))
         story.append(Spacer(1, 12))
 
-        # Show alerts: separate wind vs. rain
+        # Show alerts:
+        # Now that you have separate lists for windspeed, windgust, and rain,
+        # read them individually instead of lumps of wind vs. rain.
         alerts = st_data.get("alerts", {})
-        wind_alerts = alerts.get("wind", [])
+        windspeed_alerts = alerts.get("windspeed", [])
+        windgust_alerts = alerts.get("windgust", [])
         rain_alerts = alerts.get("rain", [])
 
         # The lists for alerts that specifically fall within tasks:
+        # (If you use them, keep them or adapt similarly)
         wind_during_task = st_data.get("wind_during_task", [])
         rain_during_task = st_data.get("rain_during_task", [])
 
         # If no "standard" alerts:
-        if not wind_alerts and not rain_alerts:
+        if not windspeed_alerts and not windgust_alerts and not rain_alerts:
             story.append(Paragraph("<b>预警情况：</b>无预警", styles["default"]))
         else:
-            # Wind alerts
-            if wind_alerts:
-                story.append(Paragraph("<b>风力预警：</b>", styles["default"]))
-                for walert in wind_alerts:
+            # Windspeed alerts
+            if windspeed_alerts:
+                story.append(Paragraph("<b>平均风速预警：</b>", styles["default"]))
+                for walert in windspeed_alerts:
                     story.append(Paragraph(f"• {walert}", styles["default"]))
+                story.append(Spacer(1, 6))
+
+            # Windgust alerts
+            if windgust_alerts:
+                story.append(Paragraph("<b>阵风预警：</b>", styles["default"]))
+                for galert in windgust_alerts:
+                    story.append(Paragraph(f"• {galert}", styles["default"]))
                 story.append(Spacer(1, 6))
 
             # Rain alerts
@@ -148,24 +147,32 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
                     story.append(Paragraph(f"- {r_time} => {r_msg}", styles["default"]))
 
         story.append(Spacer(1, 12))
+
         # Forecast table per day
         for day in st_data.get("days", []):
             story.append(Paragraph(f"<b>日期: {day['datetime']}</b>", styles["default"]))
 
-            data = [["时间", "温度(℃)", "风速(km/h)", "风力", "降水(mm)", "天气"]]
+            # Optionally add windgust columns if you'd like to show them in the table
+            data = [
+                ["时间", "温度(℃)", "风速(km/h)", "风力", "阵风(km/h)", "阵风风力", "降水(mm)", "天气"]
+            ]
 
             for hour in day.get("hours", []):
+                # We'll add separate columns for windgust
                 row = [
                     hour.get("datetime"),
                     hour.get("temp"),
                     hour.get("windspeed"),
                     f"{hour.get('B_wind_scale_chinese')}({hour.get('B_wind_scale')})",
+                    hour.get("windgust", 0),
+                    f"{hour.get('B_wind_gust_scale_chinese', '')}({hour.get('B_wind_gust_scale', '')})",
                     f"{hour.get('precip', 0)}({hour.get('precipitation_scale', '无雨')})",
                     hour.get("conditions")
                 ]
                 data.append(row)
 
-            table = Table(data, colWidths=[60, 60, 60, 80, 80, 80])
+            # Adjust columns for 8 columns
+            table = Table(data, colWidths=[60, 60, 60, 80, 60, 80, 80, 80])
             table.setStyle([
                 ('FONTNAME', (0, 0), (-1, -1), 'SimSun'),
                 ('FONTSIZE', (0, 0), (-1, -1), 11),
@@ -180,5 +187,4 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
         story.append(PageBreak())
 
     doc.build(story)
-
 

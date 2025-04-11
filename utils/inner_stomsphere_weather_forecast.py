@@ -244,14 +244,18 @@ def compute_precip_scale(precip_mm):
         return "特大暴雨"
 
 
-# transform weather data functions
 def transform_weather_data(raw_weather):
     transformed = {}
 
     for station_code, station_data in raw_weather.items():
         new_station_dict = {
             "station_name": station_code,
-            "alerts": {"wind": [], "rain": []},
+            # Separate alerts into windspeed, windgust, rain
+            "alerts": {
+                "windspeed": [],
+                "windgust": [],
+                "rain": []
+            },
             "antenna_name": station_data.get("antenna_name"),
             "latitude": station_data.get("latitude"),
             "longitude": station_data.get("longitude"),
@@ -264,13 +268,23 @@ def transform_weather_data(raw_weather):
             # If there is no current conditions data, or it's empty, just store "未查询到结果"
             new_station_dict["currentConditions"] = "未查询到结果"
         else:
-            # Copy or manipulate the cc dictionary as needed
             windspeed = cc.get("windspeed")
-            if windspeed is not None:
-                cc["B_wind_scale"] = compute_beaufort_scale(windspeed)
-                cc["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(cc["B_wind_scale"])
-
+            windgust = cc.get("windgust")
             precip = cc.get("precip")
+
+            # Handle windspeed
+            if windspeed is not None:
+                b_scale = compute_beaufort_scale(windspeed)
+                cc["B_wind_scale"] = b_scale
+                cc["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(b_scale)
+
+            # Handle windgust
+            if windgust is not None:
+                b_scale_gust = compute_beaufort_scale(windgust)
+                cc["B_wind_gust_scale"] = b_scale_gust
+                cc["B_wind_gust_scale_chinese"] = compute_beaufort_scale_chinese(b_scale_gust)
+
+            # Handle precipitation
             if precip is not None:
                 cc["precipitation_scale"] = compute_precip_scale(precip)
 
@@ -286,20 +300,32 @@ def transform_weather_data(raw_weather):
             for hour in old_hours:
                 hour_dt = f"{d.get('datetime')} {hour.get('datetime')}"
                 ws = hour.get("windspeed")
+                gust = hour.get("windgust")
                 pr = hour.get("precip")
 
+                # Handle windspeed
                 if ws is not None:
                     b_scale = compute_beaufort_scale(ws)
                     hour["B_wind_scale"] = b_scale
                     hour["B_wind_scale_chinese"] = compute_beaufort_scale_chinese(b_scale)
 
-                    if 6 <= b_scale <= 7:
-                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 6-7级风力预警")
-                    elif 8 <= b_scale <= 9:
-                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 8-9级风力预警")
-                    elif b_scale >= 10:
-                        new_station_dict["alerts"]["wind"].append(f"{hour_dt}: 10+级风力预警")
+                    # If Beaufort scale >= 6 => produce windspeed alert
+                    if b_scale >= 6:
+                        message = f"平均风速{b_scale}级({hour['B_wind_scale_chinese']})预警"
+                        new_station_dict["alerts"]["windspeed"].append(f"{hour_dt}: {message}")
 
+                # Handle windgust
+                if gust is not None:
+                    b_scale_gust = compute_beaufort_scale(gust)
+                    hour["B_wind_gust_scale"] = b_scale_gust
+                    hour["B_wind_gust_scale_chinese"] = compute_beaufort_scale_chinese(b_scale_gust)
+
+                    # If Beaufort scale >= 6 => produce windgust alert
+                    if b_scale_gust >= 6:
+                        message_gust = f"阵风级别达到{b_scale_gust}级({hour['B_wind_gust_scale_chinese']})预警"
+                        new_station_dict["alerts"]["windgust"].append(f"{hour_dt}: {message_gust}")
+
+                # Handle precipitation
                 if pr is not None:
                     hour["precipitation_scale"] = compute_precip_scale(pr)
 
@@ -387,7 +413,6 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                               weather_forecast_url, weather_forecast_key,
                               gateway_tasks_url,
                               future_how_many_days):
-
     current_time_sec = int(time.time())
 
     # 1. If both tf1 and tf2 are provided
@@ -454,7 +479,6 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
             f"{weather_forecast_url}/{lat},{lon}/{tf1_sec}/{tf2_sec}"
             f"?key={weather_forecast_key}&contentType=json&&lang=zh&unitGroup=metric"
         )
-
         try:
             resp = requests.get(weather_query_url, timeout=60)
             resp.raise_for_status()
@@ -492,9 +516,10 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
             # Transform the data (if needed):
             transformed_data = transform_weather_data(weather_results)
 
-            # Ensure every antenna has these two lists (so they appear even if empty):
+            # Ensure every antenna has these lists (so they appear even if empty):
             for st_code in transformed_data:
-                transformed_data[st_code].setdefault("wind_during_task", [])
+                transformed_data[st_code].setdefault("windspeed_during_task", [])
+                transformed_data[st_code].setdefault("windgust_during_task", [])
                 transformed_data[st_code].setdefault("rain_during_task", [])
 
             # Fetch gateway tasks in the same time range (ms):
@@ -516,14 +541,17 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
             else:
                 tasks_list = g_data.get("data", {}).get("list", [])
 
-            # Cross-reference tasks with wind/rain alerts
-            # We'll store them in "wind_during_task" / "rain_during_task"
+            # Cross-reference tasks with windspeed/windgust/rain alerts
+            # We'll store them in "windspeed_during_task", "windgust_during_task", and "rain_during_task".
             # The "code" e.g. "GSGW1803" from tasks -> antenna->code => same as antenna_code
             station_alerts = transformed_data.get(antenna_code, {}).get("alerts", {})
-            wind_alerts = station_alerts.get("wind", [])
+
+            # Now we get separate alert lists
+            windspeed_alerts = station_alerts.get("windspeed", [])
+            windgust_alerts = station_alerts.get("windgust", [])
             rain_alerts = station_alerts.get("rain", [])
 
-            # We define a helper to parse a time string to ms:
+            # Helper to parse time from the alert string
             def parse_yyyymmdd_hhmmss_to_ms(dt_str):
                 # dt_str e.g. "2025-04-07 03:00:00"
                 bj_tz = pytz.timezone("Asia/Shanghai")
@@ -549,16 +577,18 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                 if station_code not in transformed_data:
                     continue
 
-                # Ensure we have lists
-                if "wind_during_task" not in transformed_data[station_code]:
-                    transformed_data[station_code]["wind_during_task"] = []
+                # We'll ensure we have the three 'during_task' lists
+                if "windspeed_during_task" not in transformed_data[station_code]:
+                    transformed_data[station_code]["windspeed_during_task"] = []
+                if "windgust_during_task" not in transformed_data[station_code]:
+                    transformed_data[station_code]["windgust_during_task"] = []
                 if "rain_during_task" not in transformed_data[station_code]:
                     transformed_data[station_code]["rain_during_task"] = []
 
-                # Check wind alerts
-                for w_alert in wind_alerts:
-                    # e.g. "2025-04-07 03:00:00: 6-7级风力预警"
-                    splitted = w_alert.split(": ", maxsplit=1)
+                # Check windspeed alerts
+                for ws_alert in windspeed_alerts:
+                    # e.g. "2025-04-07 03:00:00: 平均风速6级(强风)预警"
+                    splitted = ws_alert.split(": ", maxsplit=1)
                     if len(splitted) < 2:
                         continue
                     time_part = splitted[0]
@@ -566,7 +596,22 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
                     alert_time_ms = parse_yyyymmdd_hhmmss_to_ms(time_part)
 
                     if start_task_ms <= alert_time_ms <= end_task_ms:
-                        transformed_data[station_code]["wind_during_task"].append({
+                        transformed_data[station_code]["windspeed_during_task"].append({
+                            "time": time_part,
+                            "message": msg_part
+                        })
+
+                # Check windgust alerts
+                for wg_alert in windgust_alerts:
+                    splitted = wg_alert.split(": ", maxsplit=1)
+                    if len(splitted) < 2:
+                        continue
+                    time_part = splitted[0]
+                    msg_part = splitted[1]
+                    alert_time_ms = parse_yyyymmdd_hhmmss_to_ms(time_part)
+
+                    if start_task_ms <= alert_time_ms <= end_task_ms:
+                        transformed_data[station_code]["windgust_during_task"].append({
                             "time": time_part,
                             "message": msg_part
                         })
@@ -590,3 +635,4 @@ def get_weather_forecast_data(post_token_url, post_token_user_name, post_token_p
             transformed_data[antenna_code] = {"Error": f"Failed to fetch weather: {e}"}
 
     return transformed_data
+
