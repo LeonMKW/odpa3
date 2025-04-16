@@ -8,7 +8,7 @@ from utils.od_utils import satellite_codes
 import requests
 import os
 from utils.inner_stomsphere_weather_forecast import get_weather_forecast_data
-from utils.inner_atomsphere_report_generate import create_weather_forecast_pdf
+from utils.inner_atomsphere_report_generate import create_weather_forecast_pdf, plot_all_stations_weather_snapshot
 
 
 # Helper Functions
@@ -108,14 +108,6 @@ def group_consecutive_hour_alerts_per_station(alert_strings, station_code):
 
 
 def create_tidy_windgust_alerts(weather_data):
-    """
-    Groups wind gust alerts station-by-station, returning
-    a single string with newlines separating station lines.
-    Example:
-      "阵风预警:
-       GSGW0101 => 2025-04-11 00:00:00 - 2025-04-13 23:00:00, 最高阵风级别达到10级(狂风)预警
-       BYGW01 => 2025-04-12 04:00:00 - 2025-04-12 05:00:00, 最高阵风级别达到8级(大风)预警"
-    """
     lines = []
     for station_code, station_data in weather_data.items():
         windgust_list = station_data.get("alerts", {}).get("windgust", [])
@@ -128,7 +120,8 @@ def create_tidy_windgust_alerts(weather_data):
     if not lines:
         return "无预警"
 
-    return f"阵风预警:\n" + "\n".join(lines)
+    # Join each line adding a semicolon at the end and a newline.
+    return "\n".join(line + ";" for line in lines)
 
 
 def generate_weather_forecast_report(
@@ -218,28 +211,28 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         future_how_many_days=future_how_many_days
     )
 
-    # 2) Prepare output folder ...
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, '..'))
     output_folder = os.path.join(project_root, "data")
     os.makedirs(output_folder, exist_ok=True)
 
-    # 3) Generate local PDF name and path
+    # 2) Build the PDF
     local_filename = f"inner_atmo_weather_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     local_path = os.path.join(output_folder, local_filename)
 
-    # 4) Build the PDF
     create_weather_forecast_pdf(local_path, weather_data)
 
-    # 5) Upload PDF to OSS
+    # 3) Upload PDF to OSS
     oss_key_pdf = f"pdf-reports/{local_filename}"
     OSS2.upload_file(oss_key_pdf, local_path)
     report_url = OSS2.make_url(oss_key_pdf)
 
-    # (Optionally remove local file)
     os.remove(local_path)
 
-    # 6) We can still accumulate windspeed_alerts_agg, rain_alerts_agg, etc. if we want
+    # 4) Generate tidy wind gust alerts
+    wind_gust_alerts_param = create_tidy_windgust_alerts(weather_data)
+
+    # 5) Gather other alerts, tasks, etc.
     windspeed_alerts_agg = []
     rain_alerts_agg = []
     windspeed_during_task_agg = []
@@ -254,7 +247,6 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         windspeed_alerts_agg.extend(windspeed_list)
         rain_alerts_agg.extend(rain_list)
 
-        # "during-task" arrays
         wsduring = station_data.get("windspeed_during_task", [])
         wgdt = station_data.get("windgust_during_task", [])
         rdt = station_data.get("rain_during_task", [])
@@ -266,17 +258,18 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         for r_item in rdt:
             rain_during_task_agg.append(f"{station_code} => {r_item['time']}: {r_item['message']}")
 
-    # *** The new place to produce the TIDY wind gust alerts: ***
-    wind_gust_alerts_param = create_tidy_windgust_alerts(weather_data)
-
-    # Provide default "无预警" if other aggregated lists are empty
     windspeed_alerts_param = windspeed_alerts_agg if windspeed_alerts_agg else "无预警"
     rain_alerts_param = rain_alerts_agg if rain_alerts_agg else "无预警"
     windspeed_during_task_param = windspeed_during_task_agg if windspeed_during_task_agg else "无预警"
     windgust_during_task_param = windgust_during_task_agg if windgust_during_task_agg else "无预警"
     rain_during_task_param = rain_during_task_agg if rain_during_task_agg else "无预警"
 
-    # 7) Determine time-of-day
+    # 6) Create ONE snapshot for ALL stations as a single table
+    snapshot_url = plot_all_stations_weather_snapshot(weather_data, output_folder, OSS2)
+    if not snapshot_url:
+        snapshot_url = "无"
+
+    # 7) time-of-day etc.
     current_timestamp = int(time.time())
     shanghai_tz = pytz.timezone('Asia/Shanghai')
     time_reported_datetime = datetime.fromtimestamp(current_timestamp, shanghai_tz)
@@ -293,7 +286,7 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         timeofday = "日报"
         timeofdayoneword = ""
 
-    # 8) Build final payload
+    # 8) Build the final payload with snapshot info
     payload = {
         "System": "odpa3",
         "NoticeCode": "gs_weather_forecast_pdf",
@@ -301,14 +294,16 @@ def inner_atmosphere_weather_forecast_report_alicloud(
         "Param": {
             "reportlink": report_url,
             "windspeed_alerts": windspeed_alerts_param,
-            "wind_gust_alerts": wind_gust_alerts_param,  # This is the new tidy version
+            "wind_gust_alerts": wind_gust_alerts_param,
             "rain_alerts": rain_alerts_param,
             "windspeed_during_task": windspeed_during_task_param,
             "windgust_during_task": windgust_during_task_param,
             "rain_during_task": rain_during_task_param,
+            "weather_snapshots": snapshot_url,  # new field
             "time_report": time_report_str,
             "timeofday": timeofday,
-            "timeofdayoneword": timeofdayoneword
+            "timeofdayoneword": timeofdayoneword,
+            "futurehowmanydays": future_how_many_days
         }
     }
 
@@ -323,5 +318,4 @@ def inner_atmosphere_weather_forecast_report_alicloud(
     except requests.exceptions.RequestException as e:
         print(f"Error sending DingTalk notification: {e}")
 
-    return f"PDF created and uploaded => {report_url}"
-
+    return f"PDF created => {report_url}, {len(snapshot_url)} snapshot created"

@@ -1,6 +1,9 @@
-
 import pytz
 from datetime import datetime
+import matplotlib
+import matplotlib.pyplot as plt
+import pandas as pd
+import re
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -188,3 +191,132 @@ def create_weather_forecast_pdf(pdf_path, weather_data):
 
     doc.build(story)
 
+
+def plot_all_stations_weather_snapshot(weather_data, output_folder, OSS2):
+
+    # Force a Chinese‐compatible font so that characters (e.g. 大风) show properly.
+    matplotlib.rcParams['font.sans-serif'] = ['SimSun']
+    matplotlib.rcParams['axes.unicode_minus'] = False
+
+    rows = []
+    bj_tz = pytz.timezone("Asia/Shanghai")
+
+    for station_code, station_data in weather_data.items():
+        for day in station_data.get("days", []):
+            day_str = day.get("datetime", "")
+            hours_list = day.get("hours", [])
+            for hr in hours_list:
+                full_time_str = f"{day_str} {hr.get('datetime', '00:00:00')}"
+                try:
+                    dt_obj = datetime.strptime(full_time_str, "%Y-%m-%d %H:%M:%S")
+                    dt_obj = bj_tz.localize(dt_obj)
+                except ValueError:
+                    continue
+
+                rows.append({
+                    "station": station_code,
+                    "time": dt_obj,
+                    "temp": hr.get("temp", ""),
+                    # Use the numeric gust value from B_wind_gust_scale for alerting
+                    "windgust": hr.get("B_wind_gust_scale", ""),
+                    # Chinese description of the gust level; not used for numeric alerting.
+                    "b_wind_gust_scale_chinese": hr.get("B_wind_gust_scale_chinese", ""),
+                    "precip": hr.get("precip", ""),
+                    "precip_scale": hr.get("precipitation_scale", ""),
+                    "conditions": hr.get("conditions", "")
+                })
+
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    df.sort_values(by=["station", "time"], inplace=True)
+
+    # Convert time to a string for the table
+    df["time_str"] = df["time"].dt.strftime("%m-%d %H:%M")
+
+    # Build the table data array in the order you specified:
+    # 0: Station, 1: Time, 2: Temp(°C), 3: 阵风等级, 4: 阵风风力, 5: 降水(mm), 6: 降水程度, 7: 天气
+    col_labels = [
+        "信关站",
+        "时段",
+        "气温(°C)",
+        "阵风等级",
+        "阵风风力",
+        "降水(mm)",
+        "降水程度",
+        "天气"
+    ]
+    table_data = []
+    for _, row in df.iterrows():
+        table_data.append([
+            row["station"],
+            row["time_str"],
+            row["temp"],
+            row["windgust"],  # numeric gust value (as stored)
+            row["b_wind_gust_scale_chinese"],  # Chinese description of gust level
+            row["precip"],
+            row["precip_scale"],
+            row["conditions"]
+        ])
+
+    # Create a figure with an axis for the table; height adjusts based on number of rows.
+    fig, ax = plt.subplots(figsize=(12, 0.4 * len(table_data) + 2))
+    ax.set_axis_off()
+    the_table = ax.table(
+        cellText=table_data,
+        colLabels=col_labels,
+        loc="upper center"
+    )
+    the_table.auto_set_font_size(False)
+    the_table.set_fontsize(10)
+    plt.title("各信关站气象预报快照", pad=20)
+
+    num_data_rows = len(table_data)
+    for i in range(num_data_rows):
+        # Check the '阵风等级' cell in column index 3
+        gust_numeric_str = table_data[i][3]
+        try:
+            scale_val = int(str(gust_numeric_str).strip())
+        except ValueError:
+            scale_val = 0  # if not convertable, default to 0
+
+        if scale_val >= 6:
+            the_table[i + 1, 3].set_facecolor(color='red')
+
+        # Check precipitation cell in column index 5.
+        precip_str = table_data[i][5]
+        try:
+            precip_val = float(str(precip_str).strip())
+        except ValueError:
+            precip_val = 0.0
+
+        if precip_val >= 100:
+            the_table[i + 1, 5].set_facecolor(color='red')
+        elif precip_val >= 50:
+            the_table[i + 1, 5].set_facecolor(color='orange')
+        elif precip_val >= 25:
+            the_table[i + 1, 5].set_facecolor(color='yellow')
+        elif precip_val > 0:
+            the_table[i + 1, 5].set_facecolor(color='#90EE90')
+
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
+
+    # Force a draw so the table is rendered
+    fig.canvas.draw()
+    # Get the bounding box of the table in inches
+    table_bbox = the_table.get_window_extent(fig.canvas.get_renderer()).transformed(fig.dpi_scale_trans.inverted())
+
+    snapshot_filename = f"allstations_weather_snapshot_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+    local_path = os.path.join(output_folder, snapshot_filename)
+    plt.savefig(local_path, bbox_inches=table_bbox, pad_inches=0.5, dpi=240)
+    plt.close(fig)
+
+
+    oss_key = f"weather-snapshots/{snapshot_filename}"
+    OSS2.upload_file(oss_key, local_path)
+    snapshot_url = OSS2.make_url(oss_key)
+    os.remove(local_path)
+
+    return snapshot_url
