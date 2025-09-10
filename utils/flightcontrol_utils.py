@@ -22,7 +22,9 @@ def tm_table(post_token_url,
 
     # Define the headers with the required token
     headers = {
-        'x-web-token': token
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTM5NSwic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NTM2MDQ5MzksImlhdCI6MTc0ODQyMDkzOX0.EjQlOPwnGrgwBox4f9BZhAJ5zurjMe4NuigiUe6EVuOczhdoxywv8ET57E4O-MR2YsxQZVgy758Zp4x_n5cVJw',
+        'x-web-token': token,
+        'Content-Type': 'application/json'
     }
 
     query2 = """

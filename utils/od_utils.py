@@ -20,7 +20,7 @@ def satellite_properties(post_token_url, post_token_user_name, post_token_passwo
 
     # Define the headers with the required token
     headers = {
-        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTE3Mywic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NDgwNzUwMDksImlhdCI6MTc0Mjg5MTAwOX0.HXNnCaWVIsF9D1hxlwgqnOy03OHxPed09G12qiZXug2oYKwvyv6ADTVTAEd2e1i1-qtve179oomF8CEWsayQag',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTQ4NCwic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NTg4NTQ2NzMsImlhdCI6MTc1MzY3MDY3M30.N7cmpBYMbqbZbyqWuVXRHO4x5VXMlIDx-gmW6bCcOcRVXSak6r0B9fCYAmzeewyAvC_Fy8u1WO-noYxf03ntCw',
         'x-web-token': token,
         'Content-Type': 'application/json'  # Explicitly specify JSON format
     }
@@ -82,7 +82,7 @@ def satellite_codes(post_token_url, post_token_user_name, post_token_password, g
 
     # Define the headers with the required token
     headers = {
-        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTE3Mywic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NDgwNzUwMDksImlhdCI6MTc0Mjg5MTAwOX0.HXNnCaWVIsF9D1hxlwgqnOy03OHxPed09G12qiZXug2oYKwvyv6ADTVTAEd2e1i1-qtve179oomF8CEWsayQag',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTQ4NCwic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NTg4NTQ2NzMsImlhdCI6MTc1MzY3MDY3M30.N7cmpBYMbqbZbyqWuVXRHO4x5VXMlIDx-gmW6bCcOcRVXSak6r0B9fCYAmzeewyAvC_Fy8u1WO-noYxf03ntCw',
         'x-web-token': token,
         'Content-Type': 'application/json'  # Explicitly specify JSON format
     }
@@ -166,7 +166,7 @@ def ephemeris_acquire(post_token_url,
 
     # Define the headers with the required token
     headers = {
-        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTE3Mywic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NDgwNzUwMDksImlhdCI6MTc0Mjg5MTAwOX0.HXNnCaWVIsF9D1hxlwgqnOy03OHxPed09G12qiZXug2oYKwvyv6ADTVTAEd2e1i1-qtve179oomF8CEWsayQag',
+        # 'x-web-token': 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJpZCI6MTQ4NCwic3ViIjoiOSIsImF1ZCI6IjgiLCJleHAiOjE3NTg4NTQ2NzMsImlhdCI6MTc1MzY3MDY3M30.N7cmpBYMbqbZbyqWuVXRHO4x5VXMlIDx-gmW6bCcOcRVXSak6r0B9fCYAmzeewyAvC_Fy8u1WO-noYxf03ntCw',
         'x-web-token': token,
         'Content-Type': 'application/json'
     }

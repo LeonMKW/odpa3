@@ -24,6 +24,7 @@ def orbit_precision_analysis_auto_task(post_token_url,
         satellite_property = satellite_properties(post_token_url,
                                                   post_token_user_name,
                                                   post_token_password, gnss_config, satIDs)
+        # print(satellite_property)
 
         # Step 1: Fetch ephemeris
         ephemeris = orbit_precision_calculation_step1(post_token_url,
@@ -31,6 +32,7 @@ def orbit_precision_analysis_auto_task(post_token_url,
                                                       post_token_password,
                                                       _influxdb, client, satIDs,
                                                       gnss_config, get_ephemeris)
+        # print(ephemeris)
 
         # Extract ephemeris_id and timestamp
         ephemeris_id = ephemeris.get('id')

@@ -1,7 +1,6 @@
 import json
 import requests
 import pandas as pd
-from utils.authentication import get_header_token
 import logging
 from datetime import datetime
 from utils.db import get_mongo
